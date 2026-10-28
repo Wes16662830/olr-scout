@@ -114,6 +114,10 @@ def default_web() -> FakeWeb:
     bz = "https://oneloftrace.live"
     w.add(f"{bz}/api/custom/v1/public/lofts", jsn(json.loads(_file("benzing/lofts.json"))))
     w.add(f"{bz}/lofts/147", html("benzing/loft-147.html"))
+    w.add(f"{bz}/lofts/300", httpx.Response(200, headers={"content-type": "text/html"}, text=(
+        '<script>window.__NUXT__=(function(a,b,C){C.id=3001;C.name="Season 2026";return {seasons:[C]}}(1,2,{}))'
+        '</script>')))
+    w.add(f"{bz}/api/custom/v1/public/season/3001/flightsAndTrainings", jsn({"stopped_flights": [], "running_flights": []}))
     w.add(f"{bz}/lofts/251", httpx.Response(200, text="<html><body>no payload</body></html>", headers={"content-type": "text/html"}))
     # Shape seen live: {"stopped_flights": [...], "running_flights": [...]} with flight_type.
     w.add(f"{bz}/api/custom/v1/public/season/2873/flightsAndTrainings",

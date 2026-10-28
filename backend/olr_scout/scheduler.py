@@ -85,7 +85,9 @@ def _results_for_live_lots():
         tags = {t for (t,) in s.execute(select(Lot.olr_tag).where(Lot.status == "live", Lot.olr_tag.is_not(None)))}
         names = []
         for olr in s.scalars(select(Olr).where(Olr.name.in_(tags))):
-            if any(season.ingested_at is None for season in s.scalars(select(Season).where(Season.olr_id == olr.id))):
+            seasons = s.scalars(select(Season).where(Season.olr_id == olr.id)).all()
+            # No seasons known yet (e.g. loft id not discovered) also needs an ingest.
+            if not seasons or any(season.ingested_at is None for season in seasons):
                 names.append(olr.name)
         if not names:
             return None

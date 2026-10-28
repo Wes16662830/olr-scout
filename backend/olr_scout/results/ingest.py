@@ -87,7 +87,7 @@ def refresh_seasons(s: Session, src: ResultsSource, olr: Olr) -> list[Season]:
         return list(olr.seasons)
     try:
         infos = src.list_seasons(olr.loft_id)
-    except HealthError as exc:
+    except Exception as exc:
         log.warning("seasons for %s: %s (keeping registry seasons)", olr.name, exc)
         return list(olr.seasons)
     for info in infos:
@@ -280,13 +280,25 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
         s.flush()
         PROGRESS.update(running=False, phase="failed", error=str(exc)[:300])
         raise
+    # Fill in loft ids for registry OLRs that lack one (e.g. Dinokeng) from the loft list.
+    PROGRESS.update(phase="matching OLR names to the results site")
+    try:
+        discover_olrs(s, src)
+        s.commit()
+    except Exception as exc:
+        log.warning("loft discovery failed: %s", exc)
     olrs = s.scalars(select(Olr).where(Olr.enabled.is_(True))).all()
     if olr_names:
         olrs = [o for o in olrs if o.name in olr_names]
+    not_found = [o.name for o in olrs if not o.loft_id]
+    for name in not_found:
+        report["errors"].append(f"{name}: not found in the results site's loft list — set its loft id in Settings")
     for olr in olrs:
         PROGRESS.update(olr=olr.name, phase="finding seasons")
         # Newest season first: the one live auctions most likely refer to.
-        for season in sorted(refresh_seasons(s, src, olr), key=lambda x: -x.year):
+        seasons = refresh_seasons(s, src, olr)
+        s.commit()  # keep newly found seasons even if one of them is skipped or fails below
+        for season in sorted(seasons, key=lambda x: -x.year):
             if only_missing and season.ingested_at:
                 continue
             try:
@@ -311,7 +323,8 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
     health.message = "; ".join(report["errors"] + mism)[:2000]
     if report["seasons"]:
         health.last_success = now_utc()
-    health.detail = {"seasons": len(report["seasons"]), "mismatches": mism, "skipped": report["skipped"]}
+    health.detail = {"seasons": len(report["seasons"]), "mismatches": mism, "skipped": report["skipped"],
+                     "olrs_not_found": not_found}
     s.flush()
     PROGRESS.update(running=False, phase="done", finished=now_utc().isoformat())
     return report

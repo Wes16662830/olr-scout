@@ -104,6 +104,12 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
   return (
     <article className={`card ${lot.claim_mismatch ? "mismatch" : ""}`}>
       {lot.claim_mismatch && <div className="redflag">⚠ Claim mismatch: the text says ace/winner but the verified result is mid-field.</div>}
+      {lot.lot_no !== null && (
+        <div className="lot-head">
+          <span className="lotno">Lot {lot.lot_no}</span>
+          <span className="lot-auction">{lot.auction_name}</span>
+        </div>
+      )}
       <div className="card-top">
         {lot.image_url ? <img src={lot.image_url} alt="" loading="lazy" /> : <div className="noimg">no photo</div>}
         <div className="card-main">
@@ -116,7 +122,7 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
           </div>
           <Link to={`/lot/${lot.id}`} className="title">{lot.ring || lot.title}{lot.bird_name && !lot.bird ? ` “${lot.bird_name}”` : ""}</Link>
           <div className="muted">
-            {lot.auction_name} · lot {lot.lot_no ?? "?"} · {lot.seller || "seller ?"} · {lot.source}
+            {lot.lot_no === null ? `${lot.auction_name} · ` : ""}{lot.seller || "seller ?"} · {lot.source}
           </div>
           <div className="row wrap price-row">
             <span className={lot.over_max ? "price over" : lot.near_max ? "price near" : "price"}>

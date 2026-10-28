@@ -214,3 +214,12 @@ def test_lots_are_matched_as_each_season_arrives(session, client):
     ingest_all(session, BenzingResultsSource(client, sleep=lambda s: None), ["AfrikaPro"])
     session.refresh(lot)
     assert lot.tier == "A" and lot.match_confidence == "exact" and lot.score > 33
+
+
+def test_ingest_finds_loft_id_for_registry_olrs(session, client):
+    """Dinokeng is in the registry without a loft id; the ingest looks it up and reads its seasons."""
+    report = ingest_all(session, BenzingResultsSource(client, sleep=lambda s: None), ["Dinokeng"])
+    dino = session.scalar(select(Olr).where(Olr.name == "Dinokeng"))
+    assert dino.loft_id == 300
+    assert [x.id for x in dino.seasons] == [3001]
+    assert any("no races flown yet" in x for x in report["skipped"])
