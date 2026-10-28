@@ -96,6 +96,7 @@ def season_metrics(
     results: dict[int, dict[str, int]],
     registered: set[str] | None = None,
     field_rate: float = FIELD_RATE,
+    registered_count: int | None = None,
 ) -> dict[str, BirdMetrics]:
     """Compute per-bird metrics for one OLR season.
 
@@ -106,7 +107,9 @@ def season_metrics(
     birds = set(registered or set())
     for fid, rows in results.items():
         birds.update(rows.keys())
-    n_reg = len(birds)
+    # Birds that never arrived anywhere have no ring in the results; the official
+    # registered count (from the teams list) still sets the field size.
+    n_reg = max(len(birds), registered_count or 0)
     long_ids = set(long_flight_ids(races))
     finals = [f for f in races if f.is_final]
     out: dict[str, BirdMetrics] = {}

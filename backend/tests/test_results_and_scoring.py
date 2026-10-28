@@ -150,3 +150,28 @@ def test_results_ignoring_page_number_does_not_loop(client, web):
         bz.PAGE_SIZE = 1000
     assert len(fr.rows) == 3 and not fr.complete
     assert any("repeated" in m for m in src.mismatches)
+
+
+def test_live_flight_list_shape(client):
+    """stopped_flights/running_flights with flight_type, as returned in Oct 2026."""
+    fl = BenzingResultsSource(client).list_flights(2873)
+    assert [f.name for f in fl][:2] == ["Training 1", "Race 1"]  # chronological
+    assert fl[0].is_training and not fl[1].is_training
+    assert fl[-1].is_final and fl[-1].distance_km == 600
+    assert fl[1].arrived == len(synthetic.results()[7101])
+
+
+def test_seasons_marked_ingested_without_birds_are_retried(session):
+    from olr_scout.results.ingest import reset_empty_seasons
+    from olr_scout.util.timeutil import now_utc
+
+    season = session.get(Season, 2873)
+    season.ingested_at = now_utc()
+    session.flush()
+    assert reset_empty_seasons(session) >= 1 and season.ingested_at is None
+
+
+def test_registered_count_sets_the_ace_cut():
+    flights = [FlightIn(1, 100)]
+    m = season_metrics(flights, {1: {f"r{i}": i for i in range(1, 11)}}, registered_count=100)
+    assert sum(b.is_ace for b in m.values()) == 5  # 5% of 100 registered, not of the 10 that arrived

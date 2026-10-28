@@ -114,9 +114,14 @@ def default_web() -> FakeWeb:
     w.add(f"{bz}/api/custom/v1/public/lofts", jsn(json.loads(_file("benzing/lofts.json"))))
     w.add(f"{bz}/lofts/147", html("benzing/loft-147.html"))
     w.add(f"{bz}/lofts/251", httpx.Response(200, text="<html><body>no payload</body></html>", headers={"content-type": "text/html"}))
+    # Shape seen live: {"stopped_flights": [...], "running_flights": [...]} with flight_type.
     w.add(f"{bz}/api/custom/v1/public/season/2873/flightsAndTrainings",
-          jsn({"flights": [f for f in synthetic.FLIGHTS if f.get("type") != "training"],
-               "trainings": [f for f in synthetic.FLIGHTS if f.get("type") == "training"]}))
+          jsn({"stopped_flights": [{"id": f["id"], "name": f["name"], "distance": f["distance"], "season_id": 2873,
+                                    "flight_type": f.get("type", "race"),
+                                    "release_time": f"2026-07-{10 + i:02d} 08:30:00",
+                                    "trigger_arrivals_counter": len(synthetic.results()[f["id"]]) or None}
+                                   for i, f in enumerate(synthetic.FLIGHTS)],
+               "running_flights": []}))
     res = synthetic.results()
 
     def results_handler(fid):
@@ -130,9 +135,14 @@ def default_web() -> FakeWeb:
 
     for f in synthetic.FLIGHTS:
         w.add(f"{bz}/api/search/v1/public/flights/{f['id']}/results/final", results_handler(f["id"]))
-    w.add(f"{bz}/api/search/v1/public/pigeon-team/2873", jsn({"data": synthetic.teams(), "total": len(synthetic.teams())}))
+    # Shape seen live: Laravel pagination, teams carry a count but no ring list.
+    teams = [{"id": i, "season_id": 2873, "name": t["name"], "registered_pigeons_count": len(t["pigeons"])}
+             for i, t in enumerate(synthetic.teams())]
+    w.add(f"{bz}/api/search/v1/public/pigeon-team/2873", jsn({"current_page": 1, "data": teams, "total": len(teams),
+                                                            "last_page": 1, "per_page": 200}))
     # Other registry seasons have no flights in the synthetic web.
     for sid in (2722, 2141, 1160, 1049):
-        w.add(f"{bz}/api/custom/v1/public/season/{sid}/flightsAndTrainings", jsn({"flights": [], "trainings": []}))
+        w.add(f"{bz}/api/custom/v1/public/season/{sid}/flightsAndTrainings",
+              jsn({"stopped_flights": [], "running_flights": []}))
         w.add(f"{bz}/api/search/v1/public/pigeon-team/{sid}", jsn({"data": [], "total": 0}))
     return w

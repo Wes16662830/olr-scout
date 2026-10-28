@@ -88,6 +88,25 @@ def _float(v) -> float | None:
         return None
 
 
+def _ring_of(r: dict) -> str | None:
+    """The ring from a result row: a full ring field, or country/year/number parts."""
+    for key in ("ring_full", "full_ring", "ring_number_full", "ringNumber", "ring_number", "ring", "pigeonRing",
+                "pigeon_ring", "pigeon.ring_full", "pigeon.ring_number", "pigeon.ringNumber", "pigeon.ring"):
+        v = _get(r, key)
+        if isinstance(v, (str, int)) and str(v).strip():
+            ring = str(v).strip()
+            # A bare number: build country-year-number from sibling fields if present.
+            if ring.isdigit():
+                for base in ("", "pigeon."):
+                    country = _get(r, base + "country", base + "ring_country", base + "country_code")
+                    year = _get(r, base + "year", base + "ring_year")
+                    if country and year:
+                        y = str(year)[-2:]
+                        return f"{country}-{y}-{ring}"
+            return ring
+    return None
+
+
 class BenzingResultsSource(ResultsSource):
     key = "benzing"
 
@@ -120,7 +139,12 @@ class BenzingResultsSource(ResultsSource):
     def list_flights(self, season_id: int) -> list[FlightInfo]:
         data = self.client.get_json(f"{self.base}/api/custom/v1/public/season/{season_id}/flightsAndTrainings")
         items: list[tuple[dict, bool]] = []
-        if isinstance(data, dict) and any(k in data for k in ("flights", "trainings")):
+        if isinstance(data, dict) and any(k in data for k in ("stopped_flights", "running_flights")):
+            # Seen live (Oct 2026): {"stopped_flights": [...], "running_flights": [...]},
+            # each flight with flight_type "training" or a race type.
+            items += [(f, False) for f in data.get("stopped_flights") or []]
+            items += [(f, False) for f in data.get("running_flights") or []]
+        elif isinstance(data, dict) and any(k in data for k in ("flights", "trainings")):
             items += [(f, False) for f in data.get("flights") or []]
             items += [(f, True) for f in data.get("trainings") or []]
         else:
@@ -132,22 +156,26 @@ class BenzingResultsSource(ResultsSource):
             if fid is None:
                 continue
             name = str(_get(f, "name", "title", "flightName", default=f"Flight {fid}"))
-            kind = str(_get(f, "type", "flightType", "kind", default="")).lower()
+            kind = str(_get(f, "flight_type", "type", "flightType", "kind", default="")).lower()
             is_training = training or bool(f.get("isTraining")) or "train" in kind or "train" in name.lower()
             dist = _float(_get(f, "distance", "distanceKm", "distance_km", "km"))
             if dist and dist > 5000:  # metres
                 dist = dist / 1000
-            m = re.search(r"(?:race|flight|vlug|wedvlug)\s*(\d+)", name, re.I)
+            m = re.search(r"(?:race|flight|vlug|wedvlug|hot\s*spot)\s*(\d+)", name, re.I)
             out.append(
                 FlightInfo(
                     id=fid, name=name, distance_km=dist,
-                    flown_at=parse_iso(_get(f, "date", "flightDate", "releaseTime", "startDate")),
+                    flown_at=parse_iso(_get(f, "release_time", "date", "flightDate", "releaseTime", "startDate")),
                     is_training=is_training,
                     is_final="final" in name.lower() or "final" in kind,
                     race_no=_int(_get(f, "number", "raceNumber", "order")) or (int(m.group(1)) if m else None),
-                    basketed=_int(_get(f, "basketed", "pigeonsCount", "entered", "numberOfPigeons")),
+                    basketed=_int(_get(f, "trigger_basketings_counter", "basketed", "pigeonsCount", "entered",
+                                       "numberOfPigeons")),
+                    arrived=_int(_get(f, "trigger_arrivals_counter", "arrived", "arrivals")),
                 )
             )
+        # Chronological; flights without a release time go last.
+        out.sort(key=lambda x: (x.flown_at is None, x.flown_at.timestamp() if x.flown_at else 0, x.id))
         return out
 
     # ----------------------------------------------------------------- results
@@ -167,18 +195,23 @@ class BenzingResultsSource(ResultsSource):
                 break  # the API ignored the page number — stop instead of looping
             prev_first = first
             for r in batch:
-                ring = _get(r, "ringNumber", "ring", "pigeonRing", "pigeon.ringNumber", "pigeon.ring", "ring_number")
+                ring = _ring_of(r)
                 if not ring:
                     continue
+                team = _get(r, "team_name", "pigeon_team.name", "team.name", "pigeon.pigeon_team.name",
+                            "pigeon.team.name", "pigeon.team_name", "teamName", "fancier_name", "fancierName",
+                            "user.name", "owner", "loftName", "pigeon.teamName")
+                if isinstance(team, dict):
+                    team = team.get("name")
                 rows.append(
                     ResultRow(
-                        ring_raw=str(ring).strip(),
-                        position=_int(_get(r, "position", "place", "rank", "pos")),
-                        team=_get(r, "teamName", "team", "fancierName", "user.name", "owner", "loftName", "pigeon.teamName"),
-                        name=_get(r, "pigeonName", "name", "pigeon.name"),
-                        speed=_float(_get(r, "speed", "velocity")),
-                        sex=_get(r, "sex", "gender", "pigeon.sex"),
-                        colour=_get(r, "color", "colour", "pigeon.color"),
+                        ring_raw=ring,
+                        position=_int(_get(r, "position", "place", "rank", "pos", "ranking", "rank_position")),
+                        team=str(team).strip() if team else None,
+                        name=_get(r, "pigeon_name", "pigeonName", "pigeon.name", "name"),
+                        speed=_float(_get(r, "speed", "velocity", "speed_mpm")),
+                        sex=_get(r, "sex", "gender", "pigeon.sex", "pigeon.gender"),
+                        colour=_get(r, "color", "colour", "pigeon.color", "pigeon.colour"),
                     )
                 )
             if not batch or len(batch) < PAGE_SIZE or (total is not None and len(rows) >= total):
@@ -234,7 +267,8 @@ class BenzingResultsSource(ResultsSource):
                     elif isinstance(p, str):
                         rings.append(p)
                 if name:
-                    teams.append(TeamEntry(str(name).strip(), rings))
+                    teams.append(TeamEntry(str(name).strip(), rings,
+                                           _int(_get(t, "registered_pigeons_count", "pigeons_count", "pigeonsCount"))))
             if not batch or len(batch) < TEAM_PAGE_SIZE or (seen_total is not None and len(teams) >= seen_total):
                 break
             page += 1

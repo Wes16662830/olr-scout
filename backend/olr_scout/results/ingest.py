@@ -29,6 +29,22 @@ SEED_REGISTRY = [
 ]
 
 
+class NoRacesYet(Exception):
+    """A season with only training tosses (or nothing) so far: skipped, not an error."""
+
+
+def reset_empty_seasons(s: Session) -> int:
+    """Seasons marked ingested that hold no birds were not really ingested (an
+    earlier version accepted 0 races). Clear the mark so they are fetched again."""
+    n = 0
+    for season in s.scalars(select(Season).where(Season.ingested_at.is_not(None))):
+        if s.scalar(select(Bird.id).where(Bird.season_id == season.id).limit(1)) is None:
+            season.ingested_at = None
+            n += 1
+    s.flush()
+    return n
+
+
 def seed_registry(s: Session) -> None:
     for entry in SEED_REGISTRY:
         olr = s.scalar(select(Olr).where(Olr.name == entry["name"]))
@@ -40,6 +56,7 @@ def seed_registry(s: Session) -> None:
             if s.get(Season, sid) is None:
                 s.add(Season(id=sid, olr_id=olr.id, year=year))
     s.flush()
+    reset_empty_seasons(s)
 
 
 def discover_olrs(s: Session, src: ResultsSource) -> int:
@@ -103,6 +120,10 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
             raw_of.setdefault(n, r)
     if teams:
         season.teams = len(teams)
+    reg_counts = [t.registered for t in teams if t.registered is not None]
+    registered_count = sum(reg_counts) if reg_counts else None
+    if not any(not f.is_training for f in flights):
+        raise NoRacesYet(f"{season.year}: no races flown yet")
     results: dict[int, dict[str, int]] = {}
     flight_rows: dict[int, Flight] = {}
     for f in flights:
@@ -121,7 +142,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
             report["mismatches"].append(fr.note)
         fl.total_rows, fl.ingested_rows = fr.total, len(fr.rows)
         positions = [r.position for r in fr.rows if r.position]
-        fl.arrived = fr.total or (max(positions) if positions else len(fr.rows))
+        fl.arrived = f.arrived or fr.total or (max(positions) if positions else len(fr.rows))
         per: dict[str, int] = {}
         for r in fr.rows:
             n = normalise(r.ring_raw)
@@ -135,11 +156,15 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
         results[f.id] = per
     s.flush()
     PROGRESS.update(phase="scoring birds")
-    season.registered = len(registered | {r for rows in results.values() for r in rows})
+    season.registered = max(len(registered | {r for rows in results.values() for r in rows}), registered_count or 0)
+    if not any(results.values()):
+        raise HealthError(f"season {season.year}: races found but no result rows could be read "
+                          "(ring field names changed?) — run diagnose-results")
     metrics = season_metrics(
         [FlightIn(f.id, f.distance_km, flight_rows[f.id].arrived, f.is_training, f.is_final, f.name) for f in flights],
         results,
         registered,
+        registered_count=registered_count,
     )
     # Replace this season's birds wholesale (results are immutable once a race is final).
     existing = {b.ring_norm: b for b in s.scalars(select(Bird).where(Bird.season_id == season.id))}
@@ -220,7 +245,7 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
     health = s.get(SourceHealth, "benzing") or SourceHealth(source_id="benzing")
     s.add(health)
     health.last_run = now_utc()
-    report = {"seasons": [], "errors": []}
+    report = {"seasons": [], "errors": [], "skipped": []}
     PROGRESS.clear()
     PROGRESS.update(running=True, phase="checking the results site", started=now_utc().isoformat(), seasons_done=0)
     try:
@@ -244,6 +269,10 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
                 health.status, health.last_success = "ok", now_utc()
                 s.commit()  # each finished season is usable straight away
                 PROGRESS["seasons_done"] = PROGRESS.get("seasons_done", 0) + 1
+            except NoRacesYet as exc:
+                s.rollback()
+                health = s.get(SourceHealth, "benzing") or health
+                report["skipped"].append(f"{olr.name} {exc}")
             except Exception as exc:
                 s.rollback()
                 health = s.get(SourceHealth, "benzing") or health
@@ -254,7 +283,7 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
     health.message = "; ".join(report["errors"] + mism)[:2000]
     if report["seasons"]:
         health.last_success = now_utc()
-    health.detail = {"seasons": len(report["seasons"]), "mismatches": mism}
+    health.detail = {"seasons": len(report["seasons"]), "mismatches": mism, "skipped": report["skipped"]}
     s.flush()
     PROGRESS.update(running=False, phase="done", finished=now_utc().isoformat())
     return report

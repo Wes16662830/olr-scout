@@ -30,6 +30,7 @@ class FlightInfo:
     is_final: bool = False
     race_no: int | None = None
     basketed: int | None = None
+    arrived: int | None = None
 
 
 @dataclass
@@ -56,6 +57,7 @@ class FlightResults:
 class TeamEntry:
     team: str
     rings: list[str]
+    registered: int | None = None  # registered_pigeons_count (rings are not listed)
 
 
 @dataclass
