@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ..models import Bird, BirdResult, FamilyStat, Flight, Olr, Season, SourceHealth
 from ..rings import normalise
 from ..scoring.tier_a import FlightIn, aggregate_families, family_key, season_metrics, shrunk_rate
-from ..util.timeutil import now_utc
+from ..util.timeutil import as_aware, now_utc
 from .base import BirdRecord, HealthError, RaceLine, ResultsSource
 
 log = logging.getLogger(__name__)
@@ -264,9 +264,42 @@ def _rescore_lots(s: Session) -> None:
         log.exception("rescoring lots after a season")
 
 
+NO_RACES_RECHECK_HOURS = 6
+
+
+def seasons_wanted(s: Session, olr: Olr, keep: int) -> list[Season]:
+    """The OLR's newest ``keep`` seasons, not counting seasons known to have no races yet."""
+    from datetime import timedelta
+
+    out = []
+    for season in sorted(olr.seasons, key=lambda x: -x.year):
+        if len(out) >= keep:
+            break
+        if season.ingested_at is None and season.no_races_checked_at is not None:
+            recent = as_aware(season.no_races_checked_at) > now_utc() - timedelta(hours=NO_RACES_RECHECK_HOURS)
+            if recent:
+                continue  # not flown yet; looked at recently
+        out.append(season)
+    return out
+
+
+def keep_seasons(s: Session) -> int:
+    from ..scoring import preferences
+
+    try:
+        return max(1, int(preferences.load(s).get("results_seasons") or 2))
+    except (TypeError, ValueError):
+        return 2
+
+
 def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = None, only_missing: bool = False,
-               rescore_each_season: bool = True) -> dict:
-    """Nightly / on-demand ingest. Records health on the 'benzing' source row."""
+               rescore_each_season: bool = True, keep: int | None = None) -> dict:
+    """Nightly / on-demand ingest. Records health on the 'benzing' source row.
+
+    Per OLR only the ``keep`` newest seasons that have races are downloaded (Settings →
+    "OLR seasons to download"). A season already stored is fetched again only if it is
+    the OLR's newest (it may still be racing), unless ``only_missing``."""
+    keep = keep or keep_seasons(s)
     health = s.get(SourceHealth, "benzing") or SourceHealth(source_id="benzing")
     s.add(health)
     health.last_run = now_utc()
@@ -298,11 +331,17 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
         # Newest season first: the one live auctions most likely refer to.
         seasons = refresh_seasons(s, src, olr)
         s.commit()  # keep newly found seasons even if one of them is skipped or fails below
-        for season in sorted(seasons, key=lambda x: -x.year):
-            if only_missing and season.ingested_at:
+        counted = 0
+        for i, season in enumerate(sorted(seasons, key=lambda x: -x.year)):
+            if counted >= keep:
+                break  # older seasons are not needed (Settings → OLR seasons to download)
+            newest = i == 0
+            if season.ingested_at and (only_missing or not newest):
+                counted += 1  # already stored and finished
                 continue
             try:
                 report["seasons"].append(ingest_season(s, src, season))
+                counted += 1
                 health.status, health.last_success = "ok", now_utc()
                 s.commit()  # each finished season is usable straight away
                 PROGRESS["seasons_done"] = PROGRESS.get("seasons_done", 0) + 1
@@ -312,12 +351,15 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
             except NoRacesYet as exc:
                 s.rollback()
                 health = s.get(SourceHealth, "benzing") or health
+                season.no_races_checked_at = now_utc()  # not counted: look one season further back
+                s.commit()
                 report["skipped"].append(f"{olr.name} {exc}")
             except Exception as exc:
                 s.rollback()
                 health = s.get(SourceHealth, "benzing") or health
                 log.exception("ingest %s %s", olr.name, season.year)
                 report["errors"].append(f"{olr.name} {season.year}: {exc}")
+                counted += 1
     mism = [m for r in report["seasons"] for m in r["mismatches"]]
     health.status = "error" if report["errors"] and not report["seasons"] else ("degraded" if report["errors"] or mism else "ok")
     health.message = "; ".join(report["errors"] + mism)[:2000]

@@ -156,6 +156,8 @@ class Season(Base):
     registered: Mapped[int | None] = mapped_column(Integer)
     teams: Mapped[int | None] = mapped_column(Integer)
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Last time the season was looked at and had no races yet (so it is not re-asked every refresh).
+    no_races_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     olr = relationship("Olr", back_populates="seasons")
     flights = relationship("Flight", back_populates="season", cascade="all, delete-orphan")
 

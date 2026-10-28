@@ -223,3 +223,28 @@ def test_ingest_finds_loft_id_for_registry_olrs(session, client):
     assert dino.loft_id == 300
     assert [x.id for x in dino.seasons] == [3001]
     assert any("no races flown yet" in x for x in report["skipped"])
+
+
+def test_only_newest_seasons_are_downloaded(session, client, web):
+    src = BenzingResultsSource(client, sleep=lambda s: None)
+
+    def flight_lists():
+        return sorted({c.split("/season/")[1].split("/")[0] for c in web.calls if "flightsAndTrainings" in c})
+
+    ingest_all(session, src, ["AfrikaPro"], keep=1)
+    assert flight_lists() == ["2873"]  # 2025, 2024, 2023, 2022 never requested
+    web.calls.clear()
+    ingest_all(session, src, ["AfrikaPro"], keep=1, only_missing=True)
+    assert flight_lists() == []  # nothing missing within the newest season
+    web.calls.clear()
+    ingest_all(session, src, ["AfrikaPro"], keep=1)
+    assert flight_lists() == ["2873"]  # the newest season is refreshed (may still be racing)
+
+
+def test_season_without_races_does_not_use_up_the_limit(session, client, web):
+    # 2873 has races; 2722..1049 have none in the test web. keep=2 → 2873 counted,
+    # the empty ones are skipped and do not count, so the search goes further back.
+    report = ingest_all(session, BenzingResultsSource(client, sleep=lambda s: None), ["AfrikaPro"], keep=2)
+    assert len(report["seasons"]) == 1 and len(report["skipped"]) == 4
+    s2722 = session.get(Season, 2722)
+    assert s2722.no_races_checked_at is not None and s2722.ingested_at is None

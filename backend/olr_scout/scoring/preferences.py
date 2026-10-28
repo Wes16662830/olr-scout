@@ -49,6 +49,9 @@ DEFAULTS: dict = {
     "family_ceiling": FAMILY_CEILING,
     "mismatch_threshold": 0.20,
     "tier_c_cap": 60.0,
+    # How many of each OLR's newest seasons (with races) to download. Older seasons
+    # verify parents (Tier B), so raising this improves pedigree checks.
+    "results_seasons": 2,
 }
 
 

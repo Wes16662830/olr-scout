@@ -9,6 +9,7 @@ type Prefs = {
   min_races: number; ace_only: boolean; include_tier_c: boolean;
   own: { team_names: string[]; usernames: string[]; exclude_own: boolean };
   weights: Record<string, number>; family_ceiling: number; mismatch_threshold: number; tier_c_cap: number;
+  results_seasons: number;
 };
 type Olr = { id: number; name: string; loft_id: number | null; aliases: string[]; enabled: boolean; auto_discovered: boolean;
   seasons: { id: number; year: number; registered: number | null; ingested_at: string | null; flights: number }[] };
@@ -96,6 +97,14 @@ export default function Settings() {
 
       <div className="panel">
         <h2>OLR registry</h2>
+        <div className="row wrap">
+          <label>OLR seasons to download per OLR
+            <input type="number" min={1} max={10} value={p.results_seasons}
+              onChange={(e) => setP({ ...p, results_seasons: Math.max(1, Number(e.target.value) || 1) })} />
+          </label>
+          <span className="small muted">Newest seasons with races. 2 covers the birds on sale; 4–5 also verifies most
+            parents (they raced 2–4 years earlier), so more lots reach Tier B. Click Save settings, then Ingest on Sources.</span>
+        </div>
         <p className="small muted">Name → Benzing loft id → seasons. Auto-discovered lofts arrive disabled; enable the ones that are real OLRs.</p>
         <table><thead><tr><th>OLR</th><th>Loft id</th><th>Seasons (year: id, birds)</th><th>Enabled</th></tr></thead>
           <tbody>{olrs.data?.map((o) => (
