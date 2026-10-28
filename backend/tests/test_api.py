@@ -61,3 +61,15 @@ def test_inventory_and_plan(api):
     assert r.status_code == 200
     plan = api.post("/api/builder/plan", json={"pairs": 2, "budget": 10000, "core_families": []}).json()
     assert plan["total_max"] <= 10000
+
+
+def test_export_limited_to_selected_auctions(api):
+    login(api)
+    items = api.get("/api/suggestions").json()["items"]
+    keys = sorted({f"{i['source']}:{i['auction_id']}" for i in items})
+    assert len(keys) >= 2
+    one = keys[0]
+    csv_all = api.get("/api/export.csv").text.strip().splitlines()
+    csv_one = api.get("/api/export.csv", params={"auctions": one}).text.strip().splitlines()
+    expected = sum(1 for i in items if f"{i['source']}:{i['auction_id']}" == one)
+    assert len(csv_one) - 1 == expected < len(csv_all) - 1

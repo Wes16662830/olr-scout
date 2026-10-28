@@ -571,22 +571,31 @@ def put_settings(body: dict = Body(...), s: Session = Depends(get_session)):
 
 
 # ------------------------------------------------------------------ export
+def _selected(s: Session, auctions: str | None) -> list[dict]:
+    """Suggestions, optionally limited to "source:auction_id" keys (comma-separated)."""
+    items = engine.suggestions(s)
+    if not auctions:
+        return items
+    keys = {k for k in auctions.split(",") if k}
+    return [x for x in items if f"{x['lot'].source}:{x['lot'].auction_id}" in keys]
+
+
 @protected.get("/export.csv")
-def export_csv(s: Session = Depends(get_session)):
-    return PlainTextResponse(export.to_csv(engine.suggestions(s)), media_type="text/csv",
+def export_csv(s: Session = Depends(get_session), auctions: str | None = None):
+    return PlainTextResponse(export.to_csv(_selected(s, auctions)), media_type="text/csv",
                              headers={"Content-Disposition": "attachment; filename=olr-scout-suggestions.csv"})
 
 
 @protected.get("/export.xlsx")
-def export_xlsx(s: Session = Depends(get_session)):
-    return Response(export.to_xlsx(engine.suggestions(s)),
+def export_xlsx(s: Session = Depends(get_session), auctions: str | None = None):
+    return Response(export.to_xlsx(_selected(s, auctions)),
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": "attachment; filename=olr-scout-suggestions.xlsx"})
 
 
 @protected.get("/export/whatsapp")
-def export_whatsapp(s: Session = Depends(get_session), limit: int = Query(25, le=100)):
-    return PlainTextResponse(export.to_whatsapp(engine.suggestions(s), limit))
+def export_whatsapp(s: Session = Depends(get_session), limit: int = Query(25, le=100), auctions: str | None = None):
+    return PlainTextResponse(export.to_whatsapp(_selected(s, auctions), limit))
 
 
 # ------------------------------------------------------------------ app

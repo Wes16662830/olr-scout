@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import AuctionFilter, { useAuctionFilter } from "../components/AuctionFilter";
 import LotCard from "../components/LotCard";
 import { LotCard as Lot } from "../lib/api";
 import { zar } from "../lib/format";
@@ -43,6 +44,8 @@ function WhyNoScores({ d }: { d: Diagnosis }) {
 
 export default function Suggestions() {
   const { data, error, loading } = useData<Resp>("/suggestions", 60_000);
+  const filter = useAuctionFilter();
+  const shown = data?.items.filter(filter.matches) ?? [];
   return (
     <section>
       <h1>Suggestions</h1>
@@ -56,8 +59,10 @@ export default function Suggestions() {
       {data?.diagnosis && <WhyNoScores d={data.diagnosis} />}
       {error && <div className="error">{error}</div>}
       {loading && !data && <p>Loading…</p>}
+      {data && <AuctionFilter lots={data.items} selected={filter.selected} onChange={filter.setSelected} />}
       {data && data.items.length === 0 && <p>No lots match right now. Check Sources if this looks wrong.</p>}
-      <div className="grid">{data?.items.map((l) => <LotCard key={l.id} lot={l} />)}</div>
+      {data && data.items.length > 0 && shown.length === 0 && <p>No suggestions in the selected auctions.</p>}
+      <div className="grid">{shown.map((l) => <LotCard key={l.id} lot={l} />)}</div>
     </section>
   );
 }
