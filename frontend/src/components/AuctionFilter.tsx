@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 type HasAuction = { source: string; auction_id?: string; auction_name: string | null };
 
@@ -49,10 +50,21 @@ export function HiddenExplainer({ overview, selected }: { overview: AuctionOverv
         <div key={a.key}>
           <b>{a.auction_name}</b>: {a.lots} lots, {a.suggested} suggested. Hidden:{" "}
           {Object.entries(a.hidden).map(([why, n]) => `${n} × ${why}`).join("; ")}.
-          {a.hidden && Object.keys(a.hidden).some((k) => k.includes("Tier D")) && (
-            <span> These lots become scoreable once this OLR's results are downloaded
-              {a.olr_tag ? ` (${a.olr_tag})` : ""} — check the Benzing row on <i>Sources</i>.</span>
-          )}
+          {(() => {
+            const n = (match: string) => Object.entries(a.hidden).filter(([k]) => k.includes(match)).reduce((t, [, v]) => t + v, 0);
+            const bySettings = n("Settings") + n("aces-only") + n("Avoid") + n("year range") + n("minimum") + n("wrong sex");
+            const tierD = n("Tier D");
+            return (
+              <>
+                {bySettings > 0 && (
+                  <span> {bySettings} of these are hidden by your <Link to="/settings">Settings</Link> (aces only, Tier C, sex, year, bloodlines) — change them there to see these lots.</span>
+                )}
+                {tierD > bySettings && (
+                  <span> Most are Tier D: check on <i>Sources</i> that {a.olr_tag ? `${a.olr_tag}'s` : "this OLR's"} results are downloaded.</span>
+                )}
+              </>
+            );
+          })()}
         </div>
       ))}
     </div>
