@@ -3,7 +3,17 @@ import { api } from "../lib/api";
 import { when } from "../lib/format";
 import { useData } from "../lib/useData";
 
-type Progress = { running?: boolean; phase?: string; auction?: string; done?: number; total?: number | null; auctions?: number; auctions_done?: number };
+type Progress = { running?: boolean; phase?: string; auction?: string; done?: number; total?: number | null; auctions?: number; auctions_done?: number;
+  olr?: string; season?: number; race?: number; races?: number; race_name?: string; seasons_done?: number; error?: string };
+
+function ingestText(p?: Progress): string | null {
+  if (!p) return null;
+  if (!p.running) return p.phase === "failed" ? `last run failed: ${p.error ?? ""}` : null;
+  const where = [p.olr, p.season].filter(Boolean).join(" ");
+  const race = p.phase === "reading race results" && p.races ? ` — race ${p.race} of ${p.races}` : "";
+  const done = p.seasons_done ? ` · ${p.seasons_done} season(s) saved` : "";
+  return `${where ? where + ": " : ""}${p.phase ?? "working"}${race}${done}`;
+}
 type S = { key: string; name: string; base_url: string; verified: boolean; status: string; last_run: string | null; last_success: string | null; lot_count: number; message: string; detail: Record<string, unknown>; progress?: Progress };
 
 function progressText(p?: Progress): string | null {
@@ -19,7 +29,7 @@ function progressText(p?: Progress): string | null {
 
 export default function Sources() {
   const { data, reload } = useData<S[]>("/sources", 3_000);
-  const running = data?.some((s) => s.progress?.running);
+  const running = data?.some((s) => s.key !== "benzing" && s.progress?.running);
   const [busy, setBusy] = useState("");
   const run = async (path: string, body: unknown, label: string) => {
     setBusy(label + "…");
@@ -51,8 +61,8 @@ export default function Sources() {
           <tr key={s.key}>
             <td><a href={s.base_url} target="_blank" rel="noopener noreferrer">{s.name}</a>{!s.verified && <div className="small muted">not yet verified on live pages</div>}</td>
             <td><span className={`badge status-${s.status.replace(/ /g, "-")}`}>{s.status}</span>
-              {progressText(s.progress) && <div className="small">⏳ {progressText(s.progress)}</div>}
-              {s.key === "benzing" && s.progress?.running && <div className="small">⏳ running (results ingest or a refresh)</div>}</td>
+              {s.key !== "benzing" && progressText(s.progress) && <div className="small">⏳ {progressText(s.progress)}</div>}
+              {s.key === "benzing" && ingestText(s.progress) && <div className="small">⏳ {ingestText(s.progress)}</div>}</td>
             <td>{s.lot_count}</td><td>{when(s.last_run)}</td><td>{when(s.last_success)}</td>
             <td className="small">{s.message}
               {s.detail && Object.keys(s.detail).length > 0 && <details><summary>detail</summary><pre className="ocr">{JSON.stringify(s.detail, null, 2)}</pre></details>}</td>

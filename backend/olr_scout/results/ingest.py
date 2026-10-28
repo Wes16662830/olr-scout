@@ -16,6 +16,9 @@ from .base import BirdRecord, HealthError, RaceLine, ResultsSource
 
 log = logging.getLogger(__name__)
 
+#: Live progress of the running results ingest, shown on the Sources screen.
+PROGRESS: dict = {}
+
 # Editable in Settings → OLR registry. Seasons: year → Benzing season id.
 SEED_REGISTRY = [
     {"name": "AfrikaPro", "loft_id": 147, "aliases": ["afrikapro", "afrika pro"],
@@ -81,6 +84,8 @@ def refresh_seasons(s: Session, src: ResultsSource, olr: Olr) -> list[Season]:
 def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
     """Download every race of one season and recompute bird + family metrics."""
     flights = src.list_flights(season.id)
+    PROGRESS.update(season=season.year, season_id=season.id, phase="reading teams", race=0,
+                    races=sum(1 for f in flights if not f.is_training))
     report = {"season": season.id, "flights": 0, "rows": 0, "mismatches": []}
     team_of: dict[str, str] = {}
     raw_of: dict[str, str] = {}
@@ -108,6 +113,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
         flight_rows[f.id] = fl
         if f.is_training:
             continue
+        PROGRESS.update(phase="reading race results", race=report["flights"] + 1, race_name=f.name)
         fr = src.flight_results(f.id)
         report["flights"] += 1
         report["rows"] += len(fr.rows)
@@ -128,6 +134,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
                 per[n] = min(per.get(n, r.position), r.position)
         results[f.id] = per
     s.flush()
+    PROGRESS.update(phase="scoring birds")
     season.registered = len(registered | {r for rows in results.values() for r in rows})
     metrics = season_metrics(
         [FlightIn(f.id, f.distance_km, flight_rows[f.id].arrived, f.is_training, f.is_final, f.name) for f in flights],
@@ -214,22 +221,32 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
     s.add(health)
     health.last_run = now_utc()
     report = {"seasons": [], "errors": []}
+    PROGRESS.clear()
+    PROGRESS.update(running=True, phase="checking the results site", started=now_utc().isoformat(), seasons_done=0)
     try:
         src.health_check()
     except Exception as exc:
         health.status, health.message = "error", f"health check failed: {exc}"
         s.flush()
+        PROGRESS.update(running=False, phase="failed", error=str(exc)[:300])
         raise
     olrs = s.scalars(select(Olr).where(Olr.enabled.is_(True))).all()
     if olr_names:
         olrs = [o for o in olrs if o.name in olr_names]
     for olr in olrs:
-        for season in refresh_seasons(s, src, olr):
+        PROGRESS.update(olr=olr.name, phase="finding seasons")
+        # Newest season first: the one live auctions most likely refer to.
+        for season in sorted(refresh_seasons(s, src, olr), key=lambda x: -x.year):
             if only_missing and season.ingested_at:
                 continue
             try:
                 report["seasons"].append(ingest_season(s, src, season))
+                health.status, health.last_success = "ok", now_utc()
+                s.commit()  # each finished season is usable straight away
+                PROGRESS["seasons_done"] = PROGRESS.get("seasons_done", 0) + 1
             except Exception as exc:
+                s.rollback()
+                health = s.get(SourceHealth, "benzing") or health
                 log.exception("ingest %s %s", olr.name, season.year)
                 report["errors"].append(f"{olr.name} {season.year}: {exc}")
     mism = [m for r in report["seasons"] for m in r["mismatches"]]
@@ -239,4 +256,5 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
         health.last_success = now_utc()
     health.detail = {"seasons": len(report["seasons"]), "mismatches": mism}
     s.flush()
+    PROGRESS.update(running=False, phase="done", finished=now_utc().isoformat())
     return report

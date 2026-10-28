@@ -22,7 +22,9 @@ def make_engine(url: str | None = None):
         path = url.split("///", 1)[1] if "///" in url else ""
         if path and path != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
-        kwargs["connect_args"] = {"check_same_thread": False}
+        # Lot refresh and results ingest write from different threads: wait up to
+        # 30 s for the other writer instead of failing with "database is locked".
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
         if path in ("", ":memory:"):
             from sqlalchemy.pool import StaticPool
 

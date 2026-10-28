@@ -155,11 +155,17 @@ class BenzingResultsSource(ResultsSource):
         rows: list[ResultRow] = []
         total: int | None = None
         page = 1
+        prev_first = None
         while True:
             params = {"page": page, "search": "", "paginationPerPage": PAGE_SIZE, "onlyUserPigeons": "false"}
             data = self._get_with_backoff(f"{self.base}/api/search/v1/public/flights/{flight_id}/results/final", params)
             batch, t = _rows(data)
             total = t if t is not None else total
+            first = repr(batch[0]) if batch else None
+            if page > 1 and first == prev_first:
+                self.mismatches.append(f"flight {flight_id}: page {page} repeated page {page - 1}; stopped")
+                break  # the API ignored the page number — stop instead of looping
+            prev_first = first
             for r in batch:
                 ring = _get(r, "ringNumber", "ring", "pigeonRing", "pigeon.ringNumber", "pigeon.ring", "ring_number")
                 if not ring:
@@ -204,6 +210,7 @@ class BenzingResultsSource(ResultsSource):
         teams: list[TeamEntry] = []
         page = 1
         seen_total = None
+        prev_first = None
         while True:
             data = self._get_with_backoff(
                 f"{self.base}/api/search/v1/public/pigeon-team/{season_id}",
@@ -211,6 +218,10 @@ class BenzingResultsSource(ResultsSource):
             )
             batch, total = _rows(data)
             seen_total = total if total is not None else seen_total
+            first = repr(batch[0]) if batch else None
+            if page > 1 and first == prev_first:
+                break  # page number ignored by the API
+            prev_first = first
             for t in batch:
                 name = _get(t, "name", "teamName", "title")
                 pigeons = _get(t, "pigeons", "birds", "pigeonList", default=[]) or []

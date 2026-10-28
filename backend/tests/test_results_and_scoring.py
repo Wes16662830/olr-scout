@@ -120,3 +120,33 @@ def test_discover_olrs(session, client):
     assert added == 1  # "Some Other OLR" added, disabled until the user enables it
     other = session.scalar(select(Olr).where(Olr.loft_id == 999))
     assert other.auto_discovered and not other.enabled
+
+
+def test_ingest_reports_progress_and_saves_each_season(session, client):
+    from olr_scout.results import ingest as ing
+
+    ingest_all(session, BenzingResultsSource(client, sleep=lambda s: None), ["AfrikaPro"])
+    assert ing.PROGRESS["running"] is False and ing.PROGRESS["phase"] == "done"
+    assert ing.PROGRESS["seasons_done"] >= 1
+    # Saved (committed) per season: a fresh session sees the birds.
+    from olr_scout import db
+
+    with db.SessionLocal() as other:
+        assert other.scalar(select(func.count()).select_from(Bird)) == 40
+
+
+def test_results_ignoring_page_number_does_not_loop(client, web):
+    import httpx
+
+    import olr_scout.results.benzing as bz
+
+    same = {"data": [{"position": i, "ringNumber": f"ZA-26-{i}"} for i in range(1, 4)], "total": 999}
+    web.add("https://oneloftrace.live/api/search/v1/public/flights/7101/results/final", httpx.Response(200, json=same))
+    bz.PAGE_SIZE = 3
+    try:
+        src = BenzingResultsSource(client, sleep=lambda s: None)
+        fr = src.flight_results(7101)
+    finally:
+        bz.PAGE_SIZE = 1000
+    assert len(fr.rows) == 3 and not fr.complete
+    assert any("repeated" in m for m in src.mismatches)

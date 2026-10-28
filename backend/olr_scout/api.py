@@ -511,35 +511,40 @@ def sources_status(s: Session = Depends(get_session)):
                 "last_success": iso(h.last_success) if h else None,
                 "lot_count": s.scalar(select(func.count()).select_from(Bird)),
                 "message": h.message if h else "", "detail": h.detail if h else {},
-                "progress": {"running": scheduler.is_busy() and not any(
-                    x["progress"].get("running") for x in out)}})
+                "progress": {**ingest_progress(), "running": scheduler.results_busy()}})
     return out
 
 
-def _background(fn, *args) -> JSONResponse:
+def ingest_progress() -> dict:
+    from .results.ingest import PROGRESS
+
+    return dict(PROGRESS)
+
+
+def _background(fn, *args, busy=None, busy_message="a job is already running") -> JSONResponse:
     """Run a site-touching job off the request thread (1 req/s makes them slow)."""
     import threading
 
-    from . import scheduler
-
-    if scheduler.is_busy():
-        return JSONResponse({"started": False, "message": "a job is already running"}, status_code=409)
+    if busy is not None and busy():
+        return JSONResponse({"started": False, "message": busy_message}, status_code=409)
     threading.Thread(target=fn, args=args, daemon=True).start()
     return JSONResponse({"started": True, "message": "started — watch this screen for the result"}, status_code=202)
 
 
 @protected.post("/sources/refresh")
 def trigger_refresh(body: dict = Body(default={})):
-    from .scheduler import job_full_refresh
+    from .scheduler import is_busy, job_full_refresh
 
-    return _background(job_full_refresh, body.get("only"))
+    return _background(job_full_refresh, body.get("only"), busy=is_busy,
+                       busy_message="a lot refresh is already running — progress is shown below")
 
 
 @protected.post("/results/ingest")
 def trigger_ingest(body: dict = Body(default={})):
-    from .scheduler import job_nightly_results
+    from .scheduler import job_nightly_results, results_busy
 
-    return _background(job_nightly_results, body.get("olrs"))
+    return _background(job_nightly_results, body.get("olrs"), busy=results_busy,
+                       busy_message="the OLR results download is already running — progress is shown in the Benzing row")
 
 
 # ------------------------------------------------------------------ settings
