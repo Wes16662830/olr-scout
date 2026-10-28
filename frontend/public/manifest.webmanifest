@@ -2,12 +2,13 @@
   "name": "OLR Scout",
   "short_name": "OLR Scout",
   "description": "Pigeon auction decision app: live lots, verified OLR results, family builder.",
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
+  "scope": "./",
   "background_color": "#0f1712",
   "theme_color": "#14532d",
   "lang": "en-ZA",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
   ]
 }

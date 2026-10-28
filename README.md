@@ -27,6 +27,19 @@ frontend/  React + TypeScript + Vite PWA
 docs/sources.md        every endpoint and its verification status
 ```
 
+## Try the demo (no setup)
+
+**https://wes16662830.github.io/olr-scout/** — the frontend on GitHub Pages, published
+on every push to `main` (same setup as the Hyrox Trainer app). It runs without the
+backend on a **made-up snapshot** (`frontend/src/demo/snapshot.json`, built by
+`backend/scripts/build_demo_snapshot.py` from the synthetic test fixtures), so every
+screen can be clicked through, but nothing in it is a real auction or race result.
+Refresh, results ingest, OCR, match overrides and push alerts need the backend and
+say so. Settings, watchlist and inventory changes are kept in the browser only.
+
+Run the demo locally: `cd frontend && npm install && npm run demo`.
+Rebuild the snapshot after scoring changes: `cd backend && python scripts/build_demo_snapshot.py`.
+
 ## Run locally
 
 ```bash

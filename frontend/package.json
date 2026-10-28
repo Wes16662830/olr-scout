@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:demo": "VITE_DEMO=1 VITE_BASE=/olr-scout/ tsc -b && VITE_DEMO=1 VITE_BASE=/olr-scout/ vite build && cp dist/index.html dist/404.html",
+    "demo": "VITE_DEMO=1 vite"
   },
   "dependencies": {
     "react": "18.3.1",

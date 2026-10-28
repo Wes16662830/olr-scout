@@ -1,9 +1,10 @@
 // OLR Scout service worker: app-shell cache + web push. API calls are never cached
 // (prices must be live).
-const SHELL = "olr-scout-shell-v1";
+const SHELL = "olr-scout-shell-v2";
+const BASE = new URL(self.registration.scope).pathname; // "/" locally, "/olr-scout/" on GitHub Pages
 
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll([BASE, BASE + "manifest.webmanifest", BASE + "icon.svg"])));
   self.skipWaiting();
 });
 
@@ -14,7 +15,7 @@ self.addEventListener("activate", (e) => {
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
+  if (e.request.method !== "GET" || url.pathname.includes("/api/")) return;
   e.respondWith(
     fetch(e.request)
       .then((r) => {
@@ -22,7 +23,7 @@ self.addEventListener("fetch", (e) => {
         caches.open(SHELL).then((c) => c.put(e.request, copy));
         return r;
       })
-      .catch(() => caches.match(e.request).then((r) => r || caches.match("/")))
+      .catch(() => caches.match(e.request).then((r) => r || caches.match(BASE)))
   );
 });
 
@@ -37,5 +38,5 @@ self.addEventListener("push", (e) => {
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const id = e.notification.data && e.notification.data.lot_id;
-  e.waitUntil(self.clients.openWindow(id ? `/lot/${id}` : "/"));
+  e.waitUntil(self.clients.openWindow(id ? `${BASE}lot/${id}` : BASE));
 });

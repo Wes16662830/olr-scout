@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
-import { api } from "./lib/api";
+import { api, DEMO } from "./lib/api";
 import { useData } from "./lib/useData";
 import Builder from "./pages/Builder";
 import Closing from "./pages/Closing";
@@ -37,6 +37,12 @@ export default function App() {
   if (!authed) return <Login onDone={() => setAuthed(true)} />;
   return (
     <div className="app">
+      {DEMO && (
+        <div className="demo-banner">
+          DEMO — made-up test data, not real auctions or race results. Buttons that need the backend
+          (refresh, OCR, match override) say so.
+        </div>
+      )}
       <header>
         <span className="brand">OLR Scout</span>
         <nav>{NAV.map(([to, label]) => <NavLink key={to} to={to} end={to === "/"}>{label}</NavLink>)}</nav>

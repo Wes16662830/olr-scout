@@ -1,7 +1,12 @@
 export class AuthError extends Error {}
 
+/** Built with VITE_DEMO=1 (the GitHub Pages build): no backend, synthetic snapshot. */
+export const DEMO = import.meta.env.VITE_DEMO === "1";
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || "";
+
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const r = await fetch(`/api${path}`, {
+  if (DEMO) return (await import("../demo/mock")).demoRequest<T>(method, path, body);
+  const r = await fetch(`${API_BASE}/api${path}`, {
     method,
     credentials: "same-origin",
     headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,

@@ -1,4 +1,4 @@
-import { api } from "./lib/api";
+import { api, DEMO } from "./lib/api";
 
 function b64ToBytes(b64: string): Uint8Array {
   const pad = "=".repeat((4 - (b64.length % 4)) % 4);
@@ -7,6 +7,7 @@ function b64ToBytes(b64: string): Uint8Array {
 }
 
 export async function enablePush(): Promise<string> {
+  if (DEMO) return "Phone notifications need the backend; not available in the demo.";
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return "This browser does not support web push. On iPhone, add the app to the home screen first.";
   const { enabled, public_key } = await api.get<{ enabled: boolean; public_key: string | null }>("/push/key");
   if (!enabled || !public_key) return "Push is not configured on the server (VAPID keys / pywebpush). Alerts still show in the app.";

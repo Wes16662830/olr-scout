@@ -5,12 +5,13 @@ import App from "./App";
 import "./styles.css";
 
 if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => undefined));
+  const base = import.meta.env.BASE_URL;
+  window.addEventListener("load", () => navigator.serviceWorker.register(`${base}sw.js`, { scope: base }).catch(() => undefined));
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, "")}>
       <App />
     </BrowserRouter>
   </React.StrictMode>

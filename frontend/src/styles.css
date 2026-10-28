@@ -77,3 +77,4 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line
   .grid { grid-template-columns: 1fr; }
   main { padding: 10px; }
 }
+.demo-banner { background: #7c2d12; color: #fff; padding: 6px 16px; font-size: 13px; text-align: center; }
