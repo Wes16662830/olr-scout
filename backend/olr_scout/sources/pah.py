@@ -63,7 +63,7 @@ class PigeonAuctionHouseSource(AuctionSource):
             ring = parse_ring(p.title)
             if ring:
                 lot.ring_raw, lot.ring_norm, lot.sex, lot.year = ring.raw, normalise(ring.raw), ring.sex, ring.year
-            if self.platform == "woocommerce":
+            if self.platform == "woocommerce" and self.need_detail(lot):
                 page = parse_product_page(self.client.get_text(p.url), self.base_url)
                 lot.ends_at, lot.description, lot.pedigree_text = page.ends_at, page.description, page.description
                 lot.pedigree_url, lot.bids, lot.reserve_met = page.pedigree_url, page.bids, page.reserve_met
@@ -71,4 +71,5 @@ class PigeonAuctionHouseSource(AuctionSource):
                     lot.current_bid = page.price
                 lot.detail_loaded = True
             lots.append(lot)
+            self.tick(auction=auction.name, done=len(lots), total=len(products))
         return lots

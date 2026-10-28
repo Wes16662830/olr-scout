@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+import queue
+import threading
 import traceback
 from datetime import timedelta
 
@@ -52,8 +54,8 @@ def upsert_lot(s: Session, lot: Lot) -> LotRow:
     for f in LOT_FIELDS:
         val = getattr(lot, f)
         # Don't wipe detail fields with None when only the listing was read.
-        if val is None and not lot.detail_loaded and f in ("ends_at", "description", "pedigree_text", "pedigree_url", "reserve_met", "bid_count"):
-            continue
+        if val is None and not lot.detail_loaded:
+            continue  # listing-only read: keep what the lot page told us last time
         setattr(row, f, val)
     row.fetched_at = lot.fetched_at
     if lot.detail_loaded:
@@ -85,53 +87,67 @@ def upsert_auction(s: Session, a: Auction, results_link: bool) -> None:
     row.updated_at = now_utc()
 
 
-def run_source(s: Session, src: AuctionSource) -> dict:
-    h = _health(s, src.key)
-    h.last_run = now_utc()
-    captured: list[tuple[str, int, str]] = []
-    src.client.on_response = lambda url, status, text: captured.append((url, status, text)) if len(captured) < 5 else None
-    report = {"source": src.key, "auctions": 0, "lots": 0, "errors": []}
-    seen_ids: set[int] = set()
+_capture = threading.local()
+
+
+def _dispatch_capture(url: str, status: int, text: str) -> None:
+    """PoliteClient callback: keep the first few raw responses of the source
+    being read on this thread (sources are read in parallel)."""
+    buf = getattr(_capture, "buf", None)
+    if buf is not None and len(buf) < 5:
+        buf.append((url, status, text))
+
+
+def _known_lots(s: Session, source: str) -> dict[str, dict]:
+    return {
+        r.lot_key: {"bid": r.current_bid, "start": r.starting_bid, "detail_at": r.detail_fetched_at, "ends_at": r.ends_at}
+        for r in s.scalars(select(LotRow).where(LotRow.source == source))
+    }
+
+
+def _fetch_worker(src: AuctionSource, out: "queue.Queue") -> None:
+    """Network only (no database): read one source and post results to ``out``."""
+    _capture.buf = []
+    src.progress.clear()
+    src.tick(running=True, phase="listing auctions", started=now_utc().isoformat())
     try:
-        auctions = src.fetch_active()
-    except SourceBlocked as exc:
-        h.status, h.message = "degraded", f"blocked: {exc}"
-        _save_raw(s, src.key, captured)
-        s.flush()
-        report["errors"].append(str(exc))
-        return report
-    except Exception as exc:
-        h.status, h.message = "error", f"{type(exc).__name__}: {exc}"
-        h.detail = {"trace": traceback.format_exc()[-3000:]}
-        _save_raw(s, src.key, captured)
-        s.flush()
-        report["errors"].append(str(exc))
-        return report
-    report["auctions"] = len(auctions)
-    blocked = False
-    for a in auctions:
         try:
-            lots = src.fetch_lots(a)
-        except SourceBlocked as exc:
-            blocked = True
-            report["errors"].append(f"{a.name}: {exc}")
-            break
+            auctions = src.fetch_active()
         except Exception as exc:
-            log.exception("%s %s", src.key, a.name)
-            report["errors"].append(f"{a.name}: {type(exc).__name__}: {exc}")
-            continue
-        upsert_auction(s, a, results_link=bool(a.olr_tag))
-        for lot in lots:
-            row = upsert_lot(s, lot)
-            seen_ids.add(row.id)
-        report["lots"] += len(lots)
+            out.put(("source_error", src.key, exc, isinstance(exc, SourceBlocked), traceback.format_exc()))
+            return
+        src.tick(phase="reading lots", auctions=len(auctions), auctions_done=0)
+        for i, a in enumerate(auctions, 1):
+            src.tick(auction=a.name, done=0, total=a.lot_count)
+            try:
+                lots = src.fetch_lots(a)
+            except SourceBlocked as exc:
+                out.put(("auction_error", src.key, a, exc, True))
+                break
+            except Exception as exc:
+                log.exception("%s %s", src.key, a.name)
+                out.put(("auction_error", src.key, a, exc, False))
+                continue
+            out.put(("auction_done", src.key, a, lots))
+            src.tick(auctions_done=i)
+        out.put(("source_done", src.key, len(auctions)))
+    finally:
+        out.put(("captured", src.key, list(_capture.buf)))
+        src.tick(running=False, phase="done", finished=now_utc().isoformat())
+        _capture.buf = None
+
+
+def _finish_health(s: Session, src: AuctionSource, report: dict, seen_ids: set[int], blocked: bool) -> None:
+    h = _health(s, src.key)
     # Lots of this source that are no longer listed have closed (only trust a clean run).
-    if not report["errors"]:
+    if not report["errors"] and not report.get("source_failed"):
         for row in s.scalars(select(LotRow).where(LotRow.source == src.key, LotRow.status.in_(("live", "upcoming")))):
             if row.id not in seen_ids:
                 row.status = "closed"
     h.lot_count = report["lots"]
-    if blocked:
+    if report.get("source_failed"):
+        pass  # status already set from the exception
+    elif blocked:
         h.status, h.message = "degraded", "; ".join(report["errors"])[:2000]
     elif report["errors"] and report["lots"] == 0:
         h.status, h.message = "error", "; ".join(report["errors"])[:2000]
@@ -146,25 +162,81 @@ def run_source(s: Session, src: AuctionSource) -> dict:
     for attr in ("lot_endpoint", "discovery_log", "platform"):
         if hasattr(src, attr):
             extra[attr] = getattr(src, attr)
-    h.detail = {"auctions": report["auctions"], "errors": report["errors"][:20], **extra}
-    if report["errors"]:
-        _save_raw(s, src.key, captured)
-    s.flush()
-    return report
+    h.detail = {**(h.detail or {}), "auctions": report["auctions"], "errors": report["errors"][:20],
+                "pages_skipped_unchanged": report.get("skipped", 0), **extra}
+
+
+def run_sources(s: Session, sources: list[AuctionSource]) -> list[dict]:
+    """Read every source in parallel (each host still gets at most 1 request/s);
+    store each auction in the database as soon as it arrives."""
+    out: queue.Queue = queue.Queue()
+    reports: dict[str, dict] = {}
+    seen: dict[str, set[int]] = {}
+    blocked: dict[str, bool] = {}
+    for src in sources:
+        src.client.on_response = _dispatch_capture
+        src.known = _known_lots(s, src.key)
+        h = _health(s, src.key)
+        h.last_run = now_utc()
+        reports[src.key] = {"source": src.key, "auctions": 0, "lots": 0, "errors": [], "skipped": 0}
+        seen[src.key], blocked[src.key] = set(), False
+    s.commit()
+    threads = [threading.Thread(target=_fetch_worker, args=(src, out), daemon=True, name=f"fetch-{src.key}")
+               for src in sources]
+    for t in threads:
+        t.start()
+    by_key = {src.key: src for src in sources}
+    finished = 0
+    while finished < len(sources):
+        try:
+            item = out.get(timeout=1.0)
+        except queue.Empty:
+            if not any(t.is_alive() for t in threads) and out.empty():
+                break
+            continue
+        kind, key = item[0], item[1]
+        rep = reports[key]
+        try:
+            if kind == "auction_done":
+                a, lots = item[2], item[3]
+                upsert_auction(s, a, results_link=bool(a.olr_tag))
+                for lot in lots:
+                    seen[key].add(upsert_lot(s, lot).id)
+                    rep["skipped"] += int(not lot.detail_loaded)
+                rep["lots"] += len(lots)
+                rep["auctions"] += 1
+                _health(s, key).lot_count = rep["lots"]
+            elif kind == "auction_error":
+                a, exc, is_block = item[2], item[3], item[4]
+                rep["errors"].append(f"{a.name}: {type(exc).__name__}: {exc}" if not is_block else f"{a.name}: blocked: {exc}")
+                blocked[key] = blocked[key] or is_block
+            elif kind == "source_error":
+                exc, is_block, trace = item[2], item[3], item[4]
+                h = _health(s, key)
+                h.status = "degraded" if is_block else "error"
+                h.message = (f"blocked: {exc}" if is_block else f"{type(exc).__name__}: {exc}")[:2000]
+                h.detail = {"trace": trace[-3000:]}
+                rep["errors"].append(str(exc))
+                rep["source_failed"] = True
+            elif kind == "source_done":
+                pass
+            elif kind == "captured":
+                if rep["errors"]:
+                    _save_raw(s, key, item[2])
+                _finish_health(s, by_key[key], rep, seen[key], blocked[key])
+                finished += 1
+            s.commit()
+        except Exception:
+            s.rollback()
+            log.exception("storing results from %s", key)
+    for t in threads:
+        t.join(timeout=5)
+    return [{k: v for k, v in r.items() if k != "source_failed"} for r in reports.values()]
 
 
 def refresh_all(s: Session, sources: dict[str, AuctionSource], only: list[str] | None = None) -> list[dict]:
-    reports = []
-    for key, src in sources.items():
-        if only and key not in only:
-            continue
-        try:
-            reports.append(run_source(s, src))
-            s.commit()
-        except Exception as exc:  # never let one source break the rest
-            s.rollback()
-            log.exception("source %s", key)
-            reports.append({"source": key, "errors": [str(exc)]})
+    chosen = [src for key, src in sources.items() if not only or key in only]
+    reports = run_sources(s, chosen)
     seller.recompute(s)
     engine.score_all(s)
     alerts.evaluate(s)

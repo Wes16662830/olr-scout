@@ -46,6 +46,9 @@ Easiest: copy `.env.example` to `.env`, set `OLR_SCOUT_PASSWORD`, then double-cl
 `start-windows.bat` (Windows) or run `./start-mac-linux.sh` (Mac/Linux). The first run
 installs everything; after that it starts in seconds. Open http://localhost:8000.
 
+To update on Windows, close the app and double-click `update-windows.bat`: it downloads the
+latest `main` and keeps your `.env`, data and installed packages.
+
 The app reads settings from `.env` in this folder (or `backend/.env`); real
 environment variables win over the file.
 

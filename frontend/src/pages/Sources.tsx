@@ -3,10 +3,23 @@ import { api } from "../lib/api";
 import { when } from "../lib/format";
 import { useData } from "../lib/useData";
 
-type S = { key: string; name: string; base_url: string; verified: boolean; status: string; last_run: string | null; last_success: string | null; lot_count: number; message: string; detail: Record<string, unknown> };
+type Progress = { running?: boolean; phase?: string; auction?: string; done?: number; total?: number | null; auctions?: number; auctions_done?: number };
+type S = { key: string; name: string; base_url: string; verified: boolean; status: string; last_run: string | null; last_success: string | null; lot_count: number; message: string; detail: Record<string, unknown>; progress?: Progress };
+
+function progressText(p?: Progress): string | null {
+  if (!p?.running) return null;
+  if (p.phase === "listing auctions") return "reading the auction list…";
+  if (p.phase === "reading lots") {
+    const of = p.total ? ` of ~${p.total}` : "";
+    const auc = p.auctions ? ` · auction ${Math.min((p.auctions_done ?? 0) + 1, p.auctions)} of ${p.auctions}` : "";
+    return `reading lots: ${p.done ?? 0}${of} in “${p.auction ?? ""}”${auc}`;
+  }
+  return p.phase || "working…";
+}
 
 export default function Sources() {
-  const { data, reload } = useData<S[]>("/sources", 30_000);
+  const { data, reload } = useData<S[]>("/sources", 3_000);
+  const running = data?.some((s) => s.progress?.running);
   const [busy, setBusy] = useState("");
   const run = async (path: string, body: unknown, label: string) => {
     setBusy(label + "…");
@@ -25,12 +38,21 @@ export default function Sources() {
         <button className="btn ghost" onClick={() => run("/results/ingest", {}, "Results ingest")}>Ingest OLR results now</button>
         <span className="muted">{busy}</span>
       </div>
+      {running && (
+        <p className="banner">
+          Reading the sites now. Each site gets at most one request per second, so the first full read can take
+          several minutes; later refreshes only re-open lots whose price changed or that close soon. Lots appear on
+          Suggestions as each auction finishes.
+        </p>
+      )}
       <div className="scroll"><table>
         <thead><tr><th>Source</th><th>Status</th><th>Lots / birds</th><th>Last run</th><th>Last success</th><th>Notes</th></tr></thead>
         <tbody>{data?.map((s) => (
           <tr key={s.key}>
             <td><a href={s.base_url} target="_blank" rel="noopener noreferrer">{s.name}</a>{!s.verified && <div className="small muted">not yet verified on live pages</div>}</td>
-            <td><span className={`badge status-${s.status.replace(/ /g, "-")}`}>{s.status}</span></td>
+            <td><span className={`badge status-${s.status.replace(/ /g, "-")}`}>{s.status}</span>
+              {progressText(s.progress) && <div className="small">⏳ {progressText(s.progress)}</div>}
+              {s.key === "benzing" && s.progress?.running && <div className="small">⏳ running (results ingest or a refresh)</div>}</td>
             <td>{s.lot_count}</td><td>{when(s.last_run)}</td><td>{when(s.last_success)}</td>
             <td className="small">{s.message}
               {s.detail && Object.keys(s.detail).length > 0 && <details><summary>detail</summary><pre className="ocr">{JSON.stringify(s.detail, null, 2)}</pre></details>}</td>

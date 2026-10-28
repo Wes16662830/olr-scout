@@ -477,6 +477,7 @@ def ocr_lot(lot_id: int, s: Session = Depends(get_session)):
 # ------------------------------------------------------------------ sources
 @protected.get("/sources")
 def sources_status(s: Session = Depends(get_session)):
+    from . import scheduler
     from .sources.registry import ADAPTERS
 
     out = []
@@ -486,14 +487,17 @@ def sources_status(s: Session = Depends(get_session)):
         out.append({"key": cls.key, "name": cls.name, "base_url": cls.base_url, "verified": cls.verified,
                     "status": h.status if h else "never run", "last_run": iso(h.last_run) if h else None,
                     "last_success": iso(h.last_success) if h else None, "lot_count": live,
-                    "message": h.message if h else "", "detail": h.detail if h else {}})
+                    "message": h.message if h else "", "detail": h.detail if h else {},
+                    "progress": dict(scheduler.sources[cls.key].progress) if cls.key in scheduler.sources else {}})
     h = s.get(SourceHealth, "benzing")
     out.append({"key": "benzing", "name": "Benzing Live / oneloftrace (results, unofficial)",
                 "base_url": settings.benzing_base_url, "verified": False,
                 "status": h.status if h else "never run", "last_run": iso(h.last_run) if h else None,
                 "last_success": iso(h.last_success) if h else None,
                 "lot_count": s.scalar(select(func.count()).select_from(Bird)),
-                "message": h.message if h else "", "detail": h.detail if h else {}})
+                "message": h.message if h else "", "detail": h.detail if h else {},
+                "progress": {"running": scheduler.is_busy() and not any(
+                    x["progress"].get("running") for x in out)}})
     return out
 
 

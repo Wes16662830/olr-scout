@@ -59,3 +59,42 @@ def test_hot_refresh_only_touches_lots_closing_soon(session, client, web):
     n = refresh.hot_refresh(session, sources)
     assert n == 1
     assert web.calls == ["https://toppigeon.co.za/product/lot-1-za-2026-port-7829/"]
+
+
+def test_unchanged_lot_pages_are_not_downloaded_again(session, client, web):
+    sources = build_sources(client)
+    refresh.refresh_all(session, sources, only=["toppigeon"])
+    for lot in session.scalars(select(Lot).where(Lot.source == "toppigeon")):
+        lot.ends_at = now_utc() + timedelta(hours=5)  # not closing soon
+    session.commit()
+    web.calls.clear()
+    reports = refresh.refresh_all(session, sources, only=["toppigeon"])
+    assert not [c for c in web.calls if "/product/" in c]  # listings only
+    assert reports[0]["skipped"] == 4 and reports[0]["lots"] == 4
+    lot1 = session.scalar(select(Lot).where(Lot.lot_key.like("%7829%")))
+    assert lot1.description and lot1.reserve_met is True  # detail fields kept
+    # A changed price makes that one lot page load again.
+    import httpx
+
+    html = open(__file__.replace("test_alerts_refresh.py", "fixtures/toppigeon/category-afrikapro.html")).read()
+    web.add("https://toppigeon.co.za/product-category/active-auctions/afrikapro-2026-auction-2",
+            httpx.Response(200, text=html.replace("3,500.00", "3,750.00"), headers={"content-type": "text/html"}))
+    web.calls.clear()
+    refresh.refresh_all(session, sources, only=["toppigeon"])
+    assert [c for c in web.calls if "/product/" in c] == ["https://toppigeon.co.za/product/lot-1-za-2026-port-7829/"]
+
+
+def test_sources_are_read_in_parallel(session, client, web):
+    import threading
+
+    names = set()
+    orig = web.handle
+
+    def spy(req):
+        names.add(threading.current_thread().name)
+        return orig(req)
+
+    web.handle = spy
+    client._client._transport = __import__("httpx").MockTransport(spy)
+    refresh.refresh_all(session, build_sources(client))
+    assert {"fetch-toppigeon", "fetch-elite", "fetch-bestpigeon", "fetch-afripigeon", "fetch-pah"} <= names

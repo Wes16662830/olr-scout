@@ -147,7 +147,8 @@ class BestPigeonSource(AuctionSource):
                 if ring:
                     lot.ring_raw, lot.ring_norm, lot.sex, lot.year = ring.raw, normalise(ring.raw), ring.sex, ring.year
                 lot.extra["bird_name"] = parts["name"]
-                lots.append(self._load_detail(lot))
+                lots.append(self._load_detail(lot) if self.need_detail(lot) else lot)
+                self.tick(auction=auction.name, done=len(lots), total=auction.lot_count)
         return lots
 
     def _load_detail(self, lot: Lot) -> Lot:

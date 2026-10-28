@@ -35,6 +35,7 @@ class TopPigeonSource(AuctionSource):
                 continue
             seen.add(c.url)
             # A sub-category may itself have sub-categories (one level deeper is enough).
+            sub_html = None
             if depth.get(c.url, 0) == 0:
                 try:
                     sub_html = self.client.get_text(c.url)
@@ -51,6 +52,7 @@ class TopPigeonSource(AuctionSource):
                 Auction(
                     self.key, c.url, c.name, url=c.url, lot_count=c.count, olr_tag=olr, olr_year=year,
                     status="upcoming" if "upcoming" in c.name.lower() or "pre-bid" in c.name.lower() else "live",
+                    extra={"page1": sub_html} if sub_html else {},
                 )
             )
         if not auctions and products:
@@ -63,7 +65,9 @@ class TopPigeonSource(AuctionSource):
         pages = 0
         while url and pages < MAX_PAGES:
             pages += 1
-            html = self.client.get_text(url)
+            # Page 1 was already downloaded while listing the auctions.
+            html = auction.extra.pop("page1", None) if pages == 1 else None
+            html = html or self.client.get_text(url)
             _, products, url = parse_category_page(html, self.base_url)
             for p in products:
                 lot = Lot(
@@ -86,8 +90,10 @@ class TopPigeonSource(AuctionSource):
                 if ring:
                     lot.ring_raw, lot.sex, lot.year = ring.raw, ring.sex, ring.year
                     lot.ring_norm = normalise(ring.raw)
-                lot = self._load_detail(lot)
+                if self.need_detail(lot):
+                    lot = self._load_detail(lot)
                 lots.append(lot)
+                self.tick(auction=auction.name, done=len(lots), total=auction.lot_count)
         return lots
 
     def _load_detail(self, lot: Lot) -> Lot:

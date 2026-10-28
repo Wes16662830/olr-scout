@@ -20,7 +20,8 @@ from .util.http import PoliteClient
 
 log = logging.getLogger(__name__)
 
-_lock = threading.Lock()  # SQLite + politeness: one job touches the sites at a time
+_lock = threading.Lock()  # one full refresh / results ingest at a time
+_hot_lock = threading.Lock()  # the 20 s near-close refresh runs even during a long full refresh
 client = PoliteClient()
 sources = build_sources(client)
 results_source = BenzingResultsSource(client)
@@ -52,10 +53,14 @@ def job_full_refresh(only: list[str] | None = None):
     return reports
 
 
-@_locked
 def job_hot_refresh():
-    with SessionLocal() as s:
-        return hot_refresh(s, sources)
+    if not _hot_lock.acquire(blocking=False):
+        return None
+    try:
+        with SessionLocal() as s:
+            return hot_refresh(s, sources)
+    finally:
+        _hot_lock.release()
 
 
 def job_results_for_live_lots():

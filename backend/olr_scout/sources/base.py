@@ -5,11 +5,16 @@ from __future__ import annotations
 import re
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..rings import normalise
 from ..util.http import PoliteClient
-from ..util.timeutil import now_utc
+from ..util.timeutil import as_aware, now_utc
+
+# A lot page is re-read when its price changed, it closes within this window,
+# or the last read is older than DETAIL_MAX_AGE. Otherwise the listing is enough.
+DETAIL_CLOSE_WINDOW = timedelta(minutes=60)
+DETAIL_MAX_AGE = timedelta(hours=6)
 
 
 @dataclass
@@ -81,6 +86,28 @@ class AuctionSource(ABC):
 
     def __init__(self, client: PoliteClient):
         self.client = client
+        #: lot_key → {"bid", "start", "detail_at", "ends_at"} from the database,
+        #: set by the refresh so unchanged lot pages are not downloaded again.
+        self.known: dict[str, dict] = {}
+        #: live progress for the Sources screen
+        self.progress: dict = {}
+
+    def need_detail(self, lot: "Lot") -> bool:
+        k = self.known.get(lot.lot_key)
+        if not k or not k.get("detail_at"):
+            return True
+        if (lot.current_bid, lot.starting_bid) != (k.get("bid"), k.get("start")) and (
+            lot.current_bid is not None or lot.starting_bid is not None
+        ):
+            return True
+        now = now_utc()
+        ends = as_aware(k.get("ends_at"))
+        if ends is None or ends - now < DETAIL_CLOSE_WINDOW:
+            return True
+        return now - as_aware(k["detail_at"]) > DETAIL_MAX_AGE
+
+    def tick(self, **kw) -> None:
+        self.progress.update(kw)
 
     @abstractmethod
     def fetch_active(self) -> list[Auction]: ...
