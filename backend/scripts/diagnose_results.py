@@ -152,9 +152,10 @@ except Exception as exc:
 
 say("\n=== Last results error stored by the app")
 try:
-    from olr_scout.db import SessionLocal
+    from olr_scout.db import SessionLocal, init_db
     from olr_scout.models import Bird, Season, SourceHealth
 
+    init_db()
     with SessionLocal() as s:
         h = s.get(SourceHealth, "benzing")
         say(f"status={h.status if h else None} message={h.message if h else None}")
@@ -163,6 +164,64 @@ try:
             f"{s.query(Season).filter(Season.ingested_at.is_not(None)).count()}")
 except Exception:
     say(traceback.format_exc()[-800:])
+
+# ---------------------------------------------------------------- matching check
+say("\n=== OLRs: which loft each one is linked to, and what is stored")
+try:
+    from sqlalchemy import func, select
+
+    from olr_scout.db import SessionLocal, init_db
+    from olr_scout.models import Bird, BirdResult, Flight, Lot, Olr, Season
+    from olr_scout.rings import parse_ring
+
+    init_db()
+    all_lofts = []
+    if lofts is not None:
+        all_lofts, _ = _rows(lofts)
+    with SessionLocal() as s:
+        tags = {t for (t,) in s.execute(select(Lot.olr_tag).where(Lot.status.in_(("live", "upcoming"))))}
+        for olr in s.scalars(select(Olr).where(Olr.enabled.is_(True))):
+            say(f"\n{olr.name}: loft id {olr.loft_id} · aliases {olr.aliases} · live lots tagged with it: {olr.name in tags}")
+            for alias in olr.aliases or []:
+                hits = [f"{r.get('id')}: {r.get('name')} (active {r.get('is_active')})" for r in all_lofts
+                        if isinstance(r, dict) and alias.lower() in str(r.get("name", "")).lower()]
+                say(f"  lofts on the results site containing '{alias}': {hits or 'none'}")
+            for season in sorted(olr.seasons, key=lambda x: -x.year):
+                birds = s.scalar(select(func.count()).select_from(Bird).where(Bird.season_id == season.id))
+                races = s.scalar(select(func.count()).select_from(Flight).where(
+                    Flight.season_id == season.id, Flight.is_training.is_(False)))
+                say(f"  season {season.year} (id {season.id}): downloaded {season.ingested_at is not None}, "
+                    f"races {races}, birds {birds}, registered {season.registered}, "
+                    f"no-races check {season.no_races_checked_at}")
+            if olr.loft_id:
+                try:
+                    found = src.list_seasons(olr.loft_id)
+                    say(f"  seasons on the loft page: {[(x.year, x.id) for x in found]}")
+                except Exception as exc:
+                    say(f"  seasons on the loft page: FAILED {exc}")
+
+        say("\n=== Live lots per auction: matched or not")
+        rows = s.execute(select(Lot.auction_name, Lot.olr_tag, Lot.tier, func.count()).where(
+            Lot.status.in_(("live", "upcoming"))).group_by(Lot.auction_name, Lot.olr_tag, Lot.tier)).all()
+        for name, tag, tier, n in rows:
+            say(f"  {name[:70] if name else '?'} · OLR tag {tag} · tier {tier}: {n}")
+
+        say("\n=== Unmatched lots in OLR auctions (up to 12): lot ring vs stored birds with the same number")
+        unmatched = s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.olr_tag.is_not(None),
+                                                Lot.bird_id.is_(None)).limit(12)).all()
+        for lot in unmatched:
+            p = parse_ring(lot.ring_raw) if lot.ring_raw else None
+            say(f"- lot {lot.lot_no} [{lot.olr_tag}] ring {lot.ring_raw!r} -> parsed {p.country if p else None}/"
+                f"{p.year if p else None}/{p.club if p else None}/{p.number if p else None} · title {lot.title[:80]!r}")
+            if p and p.number:
+                num = p.number.lstrip("0")
+                cands = s.execute(select(Bird.ring_raw, Season.year, Olr.name).join(Season, Bird.season_id == Season.id)
+                                  .join(Olr, Season.olr_id == Olr.id)
+                                  .where(Bird.ring_norm.like(f"%{num}")).limit(6)).all()
+                say("    stored birds ending in that number: " +
+                    ("; ".join(f"{r} ({o} {y})" for r, y, o in cands) if cands else "none"))
+except Exception:
+    say(traceback.format_exc()[-1500:])
 
 OUT.write_text("\n".join(lines), encoding="utf-8")
 print(f"\nSaved to {OUT}")

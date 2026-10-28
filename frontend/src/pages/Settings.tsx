@@ -24,7 +24,13 @@ export default function Settings() {
   useEffect(() => { if (data) setP(data); }, [data]);
   if (!p) return <p>Loading…</p>;
   const save = async () => {
-    try { setP(await api.put<Prefs>("/settings", p)); setMsg("Saved — lots rescored."); } catch (e) { setMsg((e as Error).message); }
+    setMsg("Saving…");
+    try {
+      setP(await api.put<Prefs>("/settings", p));
+      setMsg("Saved ✓ — suggestions update within a few seconds.");
+    } catch (e) {
+      setMsg(`Not saved: ${(e as Error).message}`);
+    }
   };
   const setFam = (i: number, patch: Partial<Fam>) => setP({ ...p, families: p.families.map((f, j) => (j === i ? { ...f, ...patch } : f)) });
   const num = (v: string) => (v === "" ? null : Number(v));
@@ -110,7 +116,13 @@ export default function Settings() {
           <tbody>{olrs.data?.map((o) => (
             <tr key={o.id}><td>{o.name}{o.auto_discovered && <span className="badge">auto</span>}</td><td>{o.loft_id ?? "–"}</td>
               <td className="small">{o.seasons.map((s) => `${s.year}: ${s.id}${s.registered ? ` (${s.registered})` : ""}${s.ingested_at ? "" : " – not ingested"}`).join(" · ")}</td>
-              <td><input type="checkbox" checked={o.enabled} onChange={async (e) => { await api.put("/olrs", { id: o.id, enabled: e.target.checked }); olrs.reload(); }} /></td></tr>
+              <td><input type="checkbox" checked={o.enabled} onChange={async (e) => {
+                const enabled = e.target.checked;
+                olrs.setData((olrs.data || []).map((x) => (x.id === o.id ? { ...x, enabled } : x)));
+                try { await api.put("/olrs", { id: o.id, enabled }); setMsg(`${o.name} ${enabled ? "on" : "off"} ✓`); }
+                catch (err) { setMsg(`${o.name} not changed: ${(err as Error).message}`); }
+                olrs.reload();
+              }} /></td></tr>
           ))}</tbody></table>
         <div className="row wrap">
           <input placeholder="OLR name" value={newOlr.name} onChange={(e) => setNewOlr({ ...newOlr, name: e.target.value })} />

@@ -248,3 +248,39 @@ def test_season_without_races_does_not_use_up_the_limit(session, client, web):
     assert len(report["seasons"]) == 1 and len(report["skipped"]) == 4
     s2722 = session.get(Season, 2722)
     assert s2722.no_races_checked_at is not None and s2722.ingested_at is None
+
+
+def test_ingest_holds_no_database_lock_while_downloading(tmp_path, client):
+    """Saving settings must work while a season downloads: the ingest may only write
+    after all its network calls are done."""
+    import sqlite3
+
+    from olr_scout import db
+    from olr_scout.results.ingest import seed_registry
+
+    path = tmp_path / "lock.db"
+    db.configure(f"sqlite:///{path}")
+    db.init_db()
+    s = db.SessionLocal()
+    seed_registry(s)
+    s.commit()
+    src = BenzingResultsSource(client, sleep=lambda x: None)
+    blocked = []
+    original = src.flight_results
+
+    def probe(fid):
+        other = sqlite3.connect(path, timeout=0.2)
+        try:
+            other.execute("UPDATE preference SET key = key")  # needs the write lock
+            other.commit()
+        except sqlite3.OperationalError:
+            blocked.append(fid)
+        finally:
+            other.close()
+        return original(fid)
+
+    src.flight_results = probe
+    ingest_all(s, src, ["AfrikaPro"], keep=1)
+    s.close()
+    assert not blocked
+    assert db.SessionLocal().query(Bird).count() == 40

@@ -61,10 +61,11 @@ def seed_registry(s: Session) -> None:
 
 def discover_olrs(s: Session, src: ResultsSource) -> int:
     """Add every loft from the Benzing loft list that is not in the registry yet."""
+    lofts = src.list_lofts()  # network first, before any write
     added = 0
     known = {o.loft_id for o in s.scalars(select(Olr)) if o.loft_id}
     names = {o.name.lower(): o for o in s.scalars(select(Olr))}
-    for loft in src.list_lofts():
+    for loft in lofts:
         if loft.id in known:
             continue
         existing = names.get(loft.name.lower())
@@ -85,8 +86,10 @@ def discover_olrs(s: Session, src: ResultsSource) -> int:
 def refresh_seasons(s: Session, src: ResultsSource, olr: Olr) -> list[Season]:
     if not olr.loft_id:
         return list(olr.seasons)
+    loft_id = olr.loft_id
+    s.commit()  # release any write lock before the network call
     try:
-        infos = src.list_seasons(olr.loft_id)
+        infos = src.list_seasons(loft_id)
     except Exception as exc:
         log.warning("seasons for %s: %s (keeping registry seasons)", olr.name, exc)
         return list(olr.seasons)
@@ -99,51 +102,57 @@ def refresh_seasons(s: Session, src: ResultsSource, olr: Olr) -> list[Season]:
 
 
 def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
-    """Download every race of one season and recompute bird + family metrics."""
-    flights = src.list_flights(season.id)
-    PROGRESS.update(season=season.year, season_id=season.id, phase="reading teams", race=0,
+    """Download every race of one season and recompute bird + family metrics.
+
+    All downloading happens first, with no database writes, so the database is
+    only locked for the few seconds it takes to store the season (saving
+    settings or toggling OLRs used to fail with "database is locked" while a
+    season downloaded)."""
+    season_id, season_year = season.id, season.year
+    # ---- 1. download (network only) -------------------------------------------
+    flights = src.list_flights(season_id)
+    PROGRESS.update(season=season_year, season_id=season_id, phase="reading teams", race=0,
                     races=sum(1 for f in flights if not f.is_training))
-    report = {"season": season.id, "flights": 0, "rows": 0, "mismatches": []}
+    report = {"season": season_id, "flights": 0, "rows": 0, "mismatches": []}
+    try:
+        teams = src.season_teams(season_id)
+    except Exception as exc:  # teams are a bonus; results are what matter
+        log.warning("teams for season %s failed: %s", season_id, exc)
+        teams = []
+    if not any(not f.is_training for f in flights):
+        raise NoRacesYet(f"{season_year}: no races flown yet")
+    downloaded = {}
+    for f in flights:
+        if f.is_training:
+            continue
+        PROGRESS.update(phase="reading race results", race=report["flights"] + 1, race_name=f.name)
+        downloaded[f.id] = src.flight_results(f.id)
+        report["flights"] += 1
+
+    # ---- 2. work out birds and metrics (memory only) ---------------------------
     team_of: dict[str, str] = {}
     raw_of: dict[str, str] = {}
     info_of: dict[str, dict] = {}  # name, colour, sex, team country from result rows
     registered: set[str] = set()
-    try:
-        teams = src.season_teams(season.id)
-    except Exception as exc:  # teams are a bonus; results are what matter
-        log.warning("teams for season %s failed: %s", season.id, exc)
-        teams = []
     for t in teams:
         for r in t.rings:
             n = normalise(r)
             registered.add(n)
             team_of[n] = t.team
             raw_of.setdefault(n, r)
-    if teams:
-        season.teams = len(teams)
     reg_counts = [t.registered for t in teams if t.registered is not None]
     registered_count = sum(reg_counts) if reg_counts else None
-    if not any(not f.is_training for f in flights):
-        raise NoRacesYet(f"{season.year}: no races flown yet")
     results: dict[int, dict[str, int]] = {}
-    flight_rows: dict[int, Flight] = {}
+    arrived_of: dict[int, int | None] = {}
     for f in flights:
-        fl = s.get(Flight, f.id) or Flight(id=f.id, season_id=season.id, name=f.name)
-        fl.name, fl.distance_km, fl.flown_at = f.name, f.distance_km, f.flown_at
-        fl.is_training, fl.is_final, fl.race_no, fl.basketed = f.is_training, f.is_final, f.race_no, f.basketed
-        s.add(fl)
-        flight_rows[f.id] = fl
-        if f.is_training:
+        fr = downloaded.get(f.id)
+        if fr is None:
             continue
-        PROGRESS.update(phase="reading race results", race=report["flights"] + 1, race_name=f.name)
-        fr = src.flight_results(f.id)
-        report["flights"] += 1
         report["rows"] += len(fr.rows)
         if not fr.complete:
             report["mismatches"].append(fr.note)
-        fl.total_rows, fl.ingested_rows = fr.total, len(fr.rows)
         positions = [r.position for r in fr.rows if r.position]
-        fl.arrived = f.arrived or fr.total or (max(positions) if positions else len(fr.rows))
+        arrived_of[f.id] = f.arrived or fr.total or (max(positions) if positions else len(fr.rows))
         per: dict[str, int] = {}
         for r in fr.rows:
             n = normalise(r.ring_raw)
@@ -159,22 +168,38 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
             if r.position is not None:
                 per[n] = min(per.get(n, r.position), r.position)
         results[f.id] = per
-    s.flush()
-    PROGRESS.update(phase="scoring birds")
-    season.registered = max(len(registered | {r for rows in results.values() for r in rows}), registered_count or 0)
     if not any(results.values()):
-        raise HealthError(f"season {season.year}: races found but no result rows could be read "
+        raise HealthError(f"season {season_year}: races found but no result rows could be read "
                           "(ring field names changed?) — run diagnose-results")
+    PROGRESS.update(phase="scoring birds")
     metrics = season_metrics(
-        [FlightIn(f.id, f.distance_km, flight_rows[f.id].arrived, f.is_training, f.is_final, f.name) for f in flights],
+        [FlightIn(f.id, f.distance_km, arrived_of.get(f.id), f.is_training, f.is_final, f.name) for f in flights],
         results,
         registered,
         registered_count=registered_count,
     )
-    # Replace this season's birds wholesale (results are immutable once a race is final).
-    existing = {b.ring_norm: b for b in s.scalars(select(Bird).where(Bird.season_id == season.id))}
+
+    # ---- 3. store (short write transaction; the caller commits) ----------------
+    PROGRESS.update(phase="saving")
+    with s.no_autoflush:
+        for f in flights:
+            fl = s.get(Flight, f.id) or Flight(id=f.id, season_id=season_id, name=f.name)
+            fl.name, fl.distance_km, fl.flown_at = f.name, f.distance_km, f.flown_at
+            fl.is_training, fl.is_final, fl.race_no, fl.basketed = f.is_training, f.is_final, f.race_no, f.basketed
+            if f.id in downloaded:
+                fl.total_rows, fl.ingested_rows = downloaded[f.id].total, len(downloaded[f.id].rows)
+                fl.arrived = arrived_of.get(f.id)
+            s.add(fl)
+        if teams:
+            season.teams = len(teams)
+        season.registered = max(len(registered | {r for rows in results.values() for r in rows}), registered_count or 0)
+        existing = {b.ring_norm: b for b in s.scalars(select(Bird).where(Bird.season_id == season_id))}
+    # Replace this season's results wholesale (results are immutable once a race is final).
+    if existing:
+        s.execute(delete(BirdResult).where(BirdResult.bird_id.in_([b.id for b in existing.values()])))
+    birds = []
     for ring, m in metrics.items():
-        b = existing.get(ring) or Bird(season_id=season.id, ring_norm=ring, ring_raw=raw_of.get(ring, ring))
+        b = existing.get(ring) or Bird(season_id=season_id, ring_norm=ring, ring_raw=raw_of.get(ring, ring))
         b.team = team_of.get(ring)
         info = info_of.get(ring, {})
         b.name = info.get("name") or b.name
@@ -185,11 +210,10 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
         b.family_key = family_key(b.team)
         b.is_ace, b.long_score, b.all_score, b.final_position = m.is_ace, m.long_score, m.all_score, m.final_position
         s.add(b)
-        s.flush()
-        s.execute(delete(BirdResult).where(BirdResult.bird_id == b.id))
-        for fid, pos in m.positions.items():
-            if pos is not None:
-                s.add(BirdResult(bird_id=b.id, flight_id=fid, position=pos))
+        birds.append((b, m))
+    s.flush()  # assigns ids in one go
+    s.add_all(BirdResult(bird_id=b.id, flight_id=fid, position=pos)
+              for b, m in birds for fid, pos in m.positions.items() if pos is not None)
     season.ingested_at = now_utc()
     s.flush()
     recompute_family_stats(s, season.olr_id)
@@ -303,6 +327,7 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
     health = s.get(SourceHealth, "benzing") or SourceHealth(source_id="benzing")
     s.add(health)
     health.last_run = now_utc()
+    s.commit()  # never hold a write lock across network calls
     report = {"seasons": [], "errors": [], "skipped": []}
     PROGRESS.clear()
     PROGRESS.update(running=True, phase="checking the results site", started=now_utc().isoformat(), seasons_done=0)
@@ -328,6 +353,7 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
         report["errors"].append(f"{name}: not found in the results site's loft list — set its loft id in Settings")
     for olr in olrs:
         PROGRESS.update(olr=olr.name, phase="finding seasons")
+        s.commit()
         # Newest season first: the one live auctions most likely refer to.
         seasons = refresh_seasons(s, src, olr)
         s.commit()  # keep newly found seasons even if one of them is skipped or fails below

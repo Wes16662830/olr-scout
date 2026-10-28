@@ -351,7 +351,9 @@ def save_olr(body: dict = Body(...), s: Session = Depends(get_session)):
         if s.get(Season, int(sid)) is None:
             s.add(Season(id=int(sid), olr_id=olr.id, year=int(year)))
     s.commit()
-    return {"ok": True, "id": olr.id}
+    if "enabled" in body:
+        _rescore_in_background()  # lots tied to this OLR may change tier
+    return {"ok": True, "id": olr.id, "enabled": olr.enabled}
 
 
 # ------------------------------------------------------------------ builder & inventory
@@ -566,9 +568,33 @@ def put_settings(body: dict = Body(...), s: Session = Depends(get_session)):
         prefs = preferences.save(s, body)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    engine.score_all(s)
-    s.commit()
+    s.commit()  # saved now; rescoring follows in the background
+    _rescore_in_background()
     return prefs
+
+
+def _rescore_in_background() -> None:
+    import threading
+
+    from .db import SessionLocal
+
+    def run():
+        with SessionLocal() as bg:
+            try:
+                engine.score_all(bg)
+                bg.commit()
+            except Exception:
+                bg.rollback()
+                import logging
+
+                logging.getLogger(__name__).exception("rescoring after settings change")
+
+    import os
+
+    if os.environ.get("OLR_SCOUT_SYNC_RESCORE") == "1":  # tests: one shared in-memory connection
+        run()
+        return
+    threading.Thread(target=run, daemon=True, name="rescore").start()
 
 
 # ------------------------------------------------------------------ export

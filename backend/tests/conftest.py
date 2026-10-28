@@ -5,6 +5,7 @@ os.environ["OLR_SCOUT_SKIP_ENV_FILE"] = "1"  # tests never read your real .env
 os.environ.setdefault("OLR_SCOUT_SCHEDULER", "0")
 os.environ.setdefault("OLR_SCOUT_DATABASE_URL", "sqlite://")
 os.environ.setdefault("OLR_SCOUT_PASSWORD", "test-password")
+os.environ.setdefault("OLR_SCOUT_SYNC_RESCORE", "1")
 
 import pytest
 

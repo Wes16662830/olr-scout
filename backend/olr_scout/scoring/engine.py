@@ -49,12 +49,18 @@ def build_context(s: Session, prefs: dict | None = None) -> Context:
     for b in birds.values():
         by_ring[b.ring_norm].append(b)
         rings.append(ResultRing(b.id, b.ring_norm, b.ring_raw))
-    best: dict[int, float | None] = {}
-    flights = {f.id: f for f in s.scalars(select(Flight))}
-    for b in birds.values():
-        pcts = [r.position / flights[r.flight_id].arrived for r in b.results
-                if r.position and flights.get(r.flight_id) and flights[r.flight_id].arrived]
-        best[b.id] = min(pcts) if pcts else None
+    # Best single-race percentile per bird, in one query (was one query per bird).
+    from sqlalchemy import func
+
+    from ..models import BirdResult
+
+    best: dict[int, float | None] = {b: None for b in birds}
+    q = (select(BirdResult.bird_id, func.min(BirdResult.position * 1.0 / Flight.arrived))
+         .join(Flight, Flight.id == BirdResult.flight_id)
+         .where(BirdResult.position.is_not(None), Flight.arrived > 0)
+         .group_by(BirdResult.bird_id))
+    for bird_id, pct in s.execute(q):
+        best[bird_id] = pct
     return Context(prefs, fam, finals, RingIndex(rings), birds, by_ring, best)
 
 
@@ -273,7 +279,17 @@ def rank_score(lot: Lot, prefs: dict) -> float | None:
     return round(min(100.0, v), 2)
 
 
+_score_lock = __import__("threading").Lock()
+
+
 def score_all(s: Session, lots: list[Lot] | None = None) -> int:
+    """Match and score lots. Serialised: settings saves, refreshes and the results
+    ingest may all ask for it at once."""
+    with _score_lock:
+        return _score_all(s, lots)
+
+
+def _score_all(s: Session, lots: list[Lot] | None = None) -> int:
     ctx = build_context(s)
     lots = lots if lots is not None else list(s.scalars(select(Lot)))
     for lot in lots:
