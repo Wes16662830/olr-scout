@@ -15,6 +15,8 @@ from ..util.timeutil import as_aware, now_utc
 # or the last read is older than DETAIL_MAX_AGE. Otherwise the listing is enough.
 DETAIL_CLOSE_WINDOW = timedelta(minutes=60)
 DETAIL_MAX_AGE = timedelta(hours=6)
+# Bump when lot-page parsing changes, so stored lots are re-read once.
+DETAIL_VERSION = 2
 
 
 @dataclass
@@ -94,7 +96,7 @@ class AuctionSource(ABC):
 
     def need_detail(self, lot: "Lot") -> bool:
         k = self.known.get(lot.lot_key)
-        if not k or not k.get("detail_at"):
+        if not k or not k.get("detail_at") or k.get("detail_version") != DETAIL_VERSION:
             return True
         if (lot.current_bid, lot.starting_bid) != (k.get("bid"), k.get("start")) and (
             lot.current_bid is not None or lot.starting_bid is not None

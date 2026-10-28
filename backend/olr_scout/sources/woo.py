@@ -134,12 +134,61 @@ def _summary_block(s: BeautifulSoup) -> Tag | None:
     )
 
 
-def parse_product_page(html: str, base_url: str) -> ProductPage:
-    """Extract only the product summary block, the pedigree image/link, the end time
-    and the bid history. Theme CSS/JS is ignored."""
+# Parts of a WooCommerce lot page that belong to OTHER lots or to the site, not this bird.
+OTHER_LOTS = (
+    "section.related, .related.products, section.up-sells, .upsells, .cross-sells, .products, "
+    "header, footer, nav, aside, .widget, .sidebar, #secondary, .site-header, .site-footer, "
+    ".elementor-widget-woocommerce-product-related, .elementor-widget-woocommerce-product-upsell"
+)
+
+
+def _pedigree_from(scope, base_url: str, hints: list[str]) -> str | None:
+    """Best pedigree link/image inside ``scope``. When several are present, prefer one
+    that names this bird's ring or lot number (``hints``)."""
+    cands: list[tuple[int, int, str]] = []
+    for i, a in enumerate(scope.find_all("a", href=True)):
+        href = a["href"]
+        label = (a.get_text(" ", strip=True) + " " + href).lower()
+        if "pedigree" in label or "stamboom" in label or href.lower().split("?")[0].endswith(".pdf"):
+            cands.append((2, i, urljoin(base_url, href)))
+    for i, img in enumerate(scope.find_all("img")):
+        src = img.get("data-large_image") or img.get("data-src") or img.get("src") or ""
+        if src and "pedigree" in (src + " " + (img.get("alt") or "") + " " + (img.get("title") or "")).lower():
+            cands.append((1, 1000 + i, urljoin(base_url, src)))
+    if not cands:
+        return None
+    from ..rings import parse_ring
+
+    flat_hints, numbers = [], []
+    for h in hints:
+        if not h:
+            continue
+        flat_hints.append(re.sub(r"[^a-z0-9]", "", h.lower()))
+        r = parse_ring(h)
+        if r and r.number and len(r.number.lstrip("0")) >= 3:
+            numbers.append(r.number.lstrip("0"))
+
+    def named(url: str) -> bool:
+        low = url.lower()
+        flat = re.sub(r"[^a-z0-9]", "", low)
+        if any(h and len(h) >= 6 and h in flat for h in flat_hints):
+            return True
+        return any(re.search(rf"(?<!\d)0*{n}(?!\d)", low) for n in numbers)
+
+    cands.sort(key=lambda c: (not named(c[2]), -c[0], c[1]))
+    return cands[0][2]
+
+
+def parse_product_page(html: str, base_url: str, hints: list[str] | None = None) -> ProductPage:
+    """Extract only this lot's summary block, pedigree image/link, end time and bid
+    history. Theme CSS/JS and other lots shown on the page (related products,
+    sidebars) are ignored. ``hints``: this bird's ring / lot number, used to pick
+    the right pedigree when several appear."""
     s = soup(html)
     for bad in s(["style", "script", "noscript", "svg"]):
         bad.decompose()
+    for other in s.select(OTHER_LOTS):
+        other.decompose()
     page = ProductPage()
     summary = _summary_block(s)
     if summary is None:
@@ -222,19 +271,10 @@ def parse_product_page(html: str, base_url: str) -> ProductPage:
         if th and td:
             page.attributes[th.get_text(" ", strip=True).lower()] = td.get_text(" ", strip=True)
 
-    # Pedigree: a link or image mentioning pedigree, else a PDF link.
-    for a in s.find_all("a", href=True):
-        label = (a.get_text(" ", strip=True) + " " + a["href"]).lower()
-        if "pedigree" in label or "stamboom" in label or a["href"].lower().endswith(".pdf"):
-            page.pedigree_url = urljoin(base_url, a["href"])
-            break
-    if page.pedigree_url is None:
-        for img in s.find_all("img"):
-            src = img.get("data-large_image") or img.get("data-src") or img.get("src") or ""
-            if "pedigree" in (src + " " + (img.get("alt") or "")).lower():
-                page.pedigree_url = urljoin(base_url, src)
-                break
-    gal = s.select_one(".woocommerce-product-gallery__image img, .wp-post-image")
+    # Pedigree: only inside this lot's own product block (gallery, summary, tabs).
+    product = s.select_one('div.product[id^="product-"], div.type-product, div.product') or summary
+    page.pedigree_url = _pedigree_from(product, base_url, hints or [])
+    gal = product.select_one(".woocommerce-product-gallery__image img, .wp-post-image")
     if gal:
         page.image_url = urljoin(base_url, gal.get("data-large_image") or gal.get("src") or "")
     return page

@@ -98,7 +98,7 @@ class TopPigeonSource(AuctionSource):
 
     def _load_detail(self, lot: Lot) -> Lot:
         html = self.client.get_text(lot.url)
-        page = parse_product_page(html, self.base_url)
+        page = parse_product_page(html, self.base_url, hints=[lot.ring_raw])
         lot.detail_loaded = True
         lot.ends_at = page.ends_at
         if page.price is not None:

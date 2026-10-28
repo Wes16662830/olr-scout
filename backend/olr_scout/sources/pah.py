@@ -64,7 +64,7 @@ class PigeonAuctionHouseSource(AuctionSource):
             if ring:
                 lot.ring_raw, lot.ring_norm, lot.sex, lot.year = ring.raw, normalise(ring.raw), ring.sex, ring.year
             if self.platform == "woocommerce" and self.need_detail(lot):
-                page = parse_product_page(self.client.get_text(p.url), self.base_url)
+                page = parse_product_page(self.client.get_text(p.url), self.base_url, hints=[lot.ring_raw])
                 lot.ends_at, lot.description, lot.pedigree_text = page.ends_at, page.description, page.description
                 lot.pedigree_url, lot.bids, lot.reserve_met = page.pedigree_url, page.bids, page.reserve_met
                 if page.price is not None and page.price_kind != "starting":

@@ -140,3 +140,27 @@ def test_one_request_per_second_per_host(client):
     TopPigeonSource(client).fetch_active()
     # Three requests to the same host → at least two waits of up to 1 s.
     assert len(client.sleeps) >= 2 and all(0 < s <= 1.0 for s in client.sleeps)
+
+
+def test_pedigree_link_ignores_other_lots_on_the_page():
+    from olr_scout.sources.woo import parse_product_page
+
+    html = """<html><body>
+      <div class="product type-product" id="product-1">
+        <div class="woocommerce-product-gallery">
+          <div class="woocommerce-product-gallery__image"><img src="https://x.co/photo-7829.jpg"></div>
+          <div class="woocommerce-product-gallery__image"><a href="https://x.co/pedigree-old-1111.jpg"><img src="https://x.co/pedigree-old-1111.jpg" alt="pedigree"></a></div>
+          <div class="woocommerce-product-gallery__image"><a href="https://x.co/pedigree-7829.jpg"><img src="https://x.co/pedigree-7829.jpg" alt="pedigree"></a></div>
+        </div>
+        <div class="summary entry-summary"><h1 class="product_title">Lot 1 ZA 2026 PORT 7829</h1></div>
+        <section class="related products"><ul class="products"><li class="product">
+          <a href="https://x.co/pedigree-9999.pdf">View pedigree</a><span>Auction ends: October 29, 2026 10:00</span>
+        </li></ul></section>
+      </div>
+      <aside class="widget"><a href="https://x.co/pedigree-sidebar.pdf">Featured pedigree</a></aside>
+    </body></html>"""
+    page = parse_product_page(html, "https://x.co", hints=["ZA 2026 PORT 7829"])
+    assert page.pedigree_url == "https://x.co/pedigree-7829.jpg"
+    assert page.ends_at is None  # the related lot's end time is not taken
+    no_hint = parse_product_page(html, "https://x.co")
+    assert "9999" not in no_hint.pedigree_url and "sidebar" not in no_hint.pedigree_url

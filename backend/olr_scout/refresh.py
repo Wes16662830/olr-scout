@@ -21,7 +21,7 @@ from .config import settings
 from .models import Auction as AuctionRow
 from .models import BidHistory, Lot as LotRow, LotPriceHistory, RawPayload, SourceHealth
 from .scoring import engine, seller
-from .sources.base import Auction, AuctionSource, Lot
+from .sources.base import DETAIL_VERSION, Auction, AuctionSource, Lot
 from .util.http import SourceBlocked
 from .util.timeutil import as_aware, now_utc
 
@@ -60,6 +60,7 @@ def upsert_lot(s: Session, lot: Lot) -> LotRow:
     row.fetched_at = lot.fetched_at
     if lot.detail_loaded:
         row.detail_fetched_at = lot.fetched_at
+        lot.extra = {**(lot.extra or {}), "detail_version": DETAIL_VERSION}
     row.extra = {**(row.extra or {}), **(lot.extra or {})}
     s.flush()
     if lot.bids:
@@ -100,7 +101,8 @@ def _dispatch_capture(url: str, status: int, text: str) -> None:
 
 def _known_lots(s: Session, source: str) -> dict[str, dict]:
     return {
-        r.lot_key: {"bid": r.current_bid, "start": r.starting_bid, "detail_at": r.detail_fetched_at, "ends_at": r.ends_at}
+        r.lot_key: {"bid": r.current_bid, "start": r.starting_bid, "detail_at": r.detail_fetched_at, "ends_at": r.ends_at,
+                    "detail_version": (r.extra or {}).get("detail_version")}
         for r in s.scalars(select(LotRow).where(LotRow.source == source))
     }
 
