@@ -61,6 +61,9 @@ class Settings:
         default_factory=lambda: _env("OLR_SCOUT_BENZING_BASE_URL", "https://oneloftrace.live")
     )
     enable_scheduler: bool = field(default_factory=lambda: _env("OLR_SCOUT_SCHEDULER", "1") == "1")
+    # Set by the start scripts: open the app in the default browser once the server is up.
+    open_browser: bool = field(default_factory=lambda: _env("OLR_SCOUT_OPEN_BROWSER", "0") == "1")
+    port: int = field(default_factory=lambda: int(_env("OLR_SCOUT_PORT", "8000")))
     vapid_private_key: str = field(default_factory=lambda: _env("OLR_SCOUT_VAPID_PRIVATE_KEY", ""))
     vapid_public_key: str = field(default_factory=lambda: _env("OLR_SCOUT_VAPID_PUBLIC_KEY", ""))
     vapid_subject: str = field(default_factory=lambda: _env("OLR_SCOUT_VAPID_SUBJECT", "mailto:admin@localhost"))

@@ -584,6 +584,25 @@ def export_whatsapp(s: Session = Depends(get_session), limit: int = Query(25, le
 
 
 # ------------------------------------------------------------------ app
+def _open_browser_when_ready(port: int) -> None:
+    """Open the default browser as soon as the server accepts connections."""
+    import socket
+    import threading
+    import time
+    import webbrowser
+
+    def wait_and_open():
+        for _ in range(120):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    break
+            except OSError:
+                time.sleep(0.5)
+        webbrowser.open(f"http://localhost:{port}")
+
+    threading.Thread(target=wait_and_open, daemon=True, name="open-browser").start()
+
+
 def create_app(start_scheduler: bool | None = None) -> FastAPI:
     from contextlib import asynccontextmanager
 
@@ -596,6 +615,8 @@ def create_app(start_scheduler: bool | None = None) -> FastAPI:
             from . import scheduler
 
             sched = scheduler.start()
+        if settings.open_browser:
+            _open_browser_when_ready(settings.port)
         yield
         if sched:
             sched.shutdown(wait=False)

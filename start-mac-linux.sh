@@ -16,6 +16,6 @@ if [ ! -f ../frontend/dist/index.html ]; then
   (cd ../frontend && npm install && npm run build)
 fi
 echo
-echo "OLR Scout is running. Open http://localhost:8000 in your browser. Press Ctrl+C to stop."
+echo "OLR Scout is starting - your browser opens http://localhost:8000 automatically. Press Ctrl+C to stop."
 echo
-python -m uvicorn olr_scout.main:app --host 127.0.0.1 --port 8000
+OLR_SCOUT_OPEN_BROWSER=1 python -m uvicorn olr_scout.main:app --host 127.0.0.1 --port 8000

@@ -42,9 +42,10 @@ popd
 
 :run
 echo.
-echo OLR Scout is running. Open http://localhost:8000 in your browser.
+echo OLR Scout is starting - your browser opens http://localhost:8000 automatically.
 echo Close this window to stop it.
 echo.
+set "OLR_SCOUT_OPEN_BROWSER=1"
 ".venv\Scripts\python.exe" -m uvicorn olr_scout.main:app --host 127.0.0.1 --port 8000
 echo.
 echo OLR Scout stopped. If you did not stop it yourself, the error is shown above.
