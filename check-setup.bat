@@ -6,8 +6,14 @@ echo ============ OLR Scout setup check ============
 echo Folder: %CD%
 echo.
 
-echo [Python]
-py -3 --version 2>nul || python --version 2>nul || echo    NOT FOUND - install Python 3.12 and tick "Add python.exe to PATH"
+echo [Python - OLR Scout needs 3.13, 3.12 or 3.11]
+py -0 2>nul || python --version 2>nul || echo    NOT FOUND - install Python 3.13
+set "PYOK="
+py -3.13 -c "pass" >nul 2>&1 && set "PYOK=3.13"
+if not defined PYOK py -3.12 -c "pass" >nul 2>&1 && set "PYOK=3.12"
+if not defined PYOK py -3.11 -c "pass" >nul 2>&1 && set "PYOK=3.11"
+if defined PYOK echo    ok - will use Python %PYOK%
+if not defined PYOK echo    PROBLEM: no Python 3.13, 3.12 or 3.11 - open Command Prompt and type: py install 3.13
 echo.
 echo [Node.js]
 node --version 2>nul || echo    NOT FOUND - install Node.js LTS from nodejs.org
