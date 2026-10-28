@@ -113,8 +113,9 @@ try:
             for f in flights.get(key) or []:
                 types[str(f.get("flight_type"))] = types.get(str(f.get("flight_type")), 0) + 1
         say(f"flight_type values: {types}")
-    for f in fl[:15]:
-        say(f"  id={f.id} name={f.name!r} km={f.distance_km} training={f.is_training} final={f.is_final}")
+    say(f"Training tosses: {sum(f.is_training for f in fl)} · races:")
+    for f in [x for x in fl if not x.is_training][:20]:
+        say(f"  id={f.id} name={f.name!r} km={f.distance_km} final={f.is_final} arrived={f.arrived} basketed={f.basketed}")
     first_race = next((f for f in fl if not f.is_training), None)
 except Exception as exc:
     say(f"App could not parse flights: {type(exc).__name__}: {exc}")

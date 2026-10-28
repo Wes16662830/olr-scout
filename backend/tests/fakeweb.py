@@ -36,6 +36,7 @@ class FakeWeb:
         self.calls: list[str] = []
         self.anon_key = _file("elite/anon_key.txt").strip()
         self.results_page_size = None  # set to force pagination
+        self.results_max_per_page = 15  # the live API caps page size; forces several pages
 
     def add(self, url: str, handler):
         self.routes[url.rstrip("/")] = handler
@@ -125,12 +126,21 @@ def default_web() -> FakeWeb:
     res = synthetic.results()
 
     def results_handler(fid):
+        # Shape seen live (Oct 2026): {"all_flight_results": {Laravel page}, "my_flight_results": {...}};
+        # the ring is pigeon.ring_description, the position arrival_order. The server caps page size.
         def h(req: httpx.Request):
             q = parse_qs(req.url.query.decode())
             page = int(q.get("page", ["1"])[0])
-            size = w.results_page_size or int(q.get("paginationPerPage", ["1000"])[0])
+            size = min(w.results_page_size or int(q.get("paginationPerPage", ["1000"])[0]), w.results_max_per_page)
             rows = res[fid]
-            return jsn({"data": rows[(page - 1) * size: page * size], "total": len(rows)})
+            data = [{"id": 900000 + r["position"], "flight_id": fid, "arrival_order": r["position"], "speed": r["speed"],
+                     "pigeon": {"name": None, "ring_number": None, "ring_description": r["ringNumber"], "color": "BC",
+                                "sex": "", "pigeon_team": {"country": "ZA", "name": r["teamName"]}}}
+                    for r in rows[(page - 1) * size: page * size]]
+            last = max(1, -(-len(rows) // size))
+            return jsn({"all_flight_results": {"current_page": page, "data": data, "per_page": size,
+                                               "last_page": last, "total": len(rows)},
+                        "my_flight_results": {"current_page": 1, "data": [], "total": 0}})
         return h
 
     for f in synthetic.FLIGHTS:

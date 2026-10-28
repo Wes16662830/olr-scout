@@ -175,3 +175,30 @@ def test_registered_count_sets_the_ace_cut():
     flights = [FlightIn(1, 100)]
     m = season_metrics(flights, {1: {f"r{i}": i for i in range(1, 11)}}, registered_count=100)
     assert sum(b.is_ace for b in m.values()) == 5  # 5% of 100 registered, not of the 10 that arrived
+
+
+def test_live_result_row_shape_and_page_cap(client, web):
+    """Rows under all_flight_results, ring in pigeon.ring_description, position arrival_order;
+    the server returns fewer rows per page than asked, so last_page drives paging."""
+    src = BenzingResultsSource(client, sleep=lambda s: None)
+    fr = src.flight_results(7101)
+    expected = synthetic.results()[7101]
+    assert fr.complete and len(fr.rows) == len(expected) > 15
+    assert fr.rows[0].ring_raw == expected[0]["ringNumber"] and fr.rows[0].position == 1
+    assert fr.rows[0].team == expected[0]["teamName"]
+
+
+def test_nuxt2_season_list_from_live_page_snippet():
+    from olr_scout.results.nuxt import seasons_from_nuxt2
+
+    html = ('C.distance=d;C.id=2873;C.name="Season 2026";C.payment_info=b;'
+            'seasons:[C,{agb:b,completed:c,distance:d,id:2722,name:"Season 2025",payment_info:b},'
+            '{agb:b,completed:a,distance:d,id:2141,name:"Season 2024",payment_info:b}]')
+    assert [(x["id"], x["year"]) for x in seasons_from_nuxt2(html)] == [(2873, 2026), (2722, 2025), (2141, 2024)]
+
+
+def test_polish_ring_with_numeric_club():
+    from olr_scout.rings import parse_ring
+
+    r = parse_ring("PL-25-0400-3205")
+    assert (r.country, r.year, r.club, r.number) == ("PL", 2025, "0400", "3205")

@@ -98,3 +98,20 @@ def find_seasons(payload) -> list[dict]:
 
     walk(payload)
     return sorted(found, key=lambda s: s["year"], reverse=True)
+
+
+# Nuxt 2 pages (window.__NUXT__=(function(a,b,...){...})) are JavaScript, not JSON.
+# Seasons appear as  C.id=2873;C.name="Season 2026"  or  {...,id:2722,name:"Season 2025",...}
+_NUXT2_SEASON = re.compile(
+    r'(?:\b[A-Za-z_$][\w$]*\.)?\bid[:=](\d{2,7})[;,]\s*(?:[A-Za-z_$][\w$]*\.)?name[:=]"([^"]*?season[^"]*?)"',
+    re.I,
+)
+
+
+def seasons_from_nuxt2(html: str) -> list[dict]:
+    out: dict[int, dict] = {}
+    for m in _NUXT2_SEASON.finditer(html):
+        y = re.search(r"(?:19|20)\d{2}", m.group(2))
+        if y:
+            out.setdefault(int(m.group(1)), {"id": int(m.group(1)), "year": int(y.group(0)), "name": m.group(2)})
+    return sorted(out.values(), key=lambda x: x["year"], reverse=True)

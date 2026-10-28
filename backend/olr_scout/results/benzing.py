@@ -24,7 +24,7 @@ from .base import (
     SeasonInfo,
     TeamEntry,
 )
-from .nuxt import find_seasons, payload_from_html
+from .nuxt import find_seasons, payload_from_html, seasons_from_nuxt2
 
 log = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def _rows(data) -> tuple[list[dict], int | None]:
         for k in ("total", "totalCount", "totalItems"):
             if isinstance(meta.get(k), int):
                 total = meta[k]
-    for k in ("data", "items", "results", "rows", "content", "lofts", "pigeons", "teams"):
+    for k in ("all_flight_results", "data", "items", "results", "rows", "content", "lofts", "pigeons", "teams"):
         v = data.get(k)
         if isinstance(v, list):
             return v, total
@@ -57,6 +57,19 @@ def _rows(data) -> tuple[list[dict], int | None]:
             if inner:
                 return inner, total if total is not None else t2
     return [], total
+
+
+def _last_page(data) -> int | None:
+    """Laravel-style ``last_page``, possibly nested (all_flight_results.last_page)."""
+    if isinstance(data, dict):
+        if isinstance(data.get("last_page"), int):
+            return data["last_page"]
+        for k in ("all_flight_results", "meta", "pagination"):
+            if isinstance(data.get(k), dict):
+                lp = _last_page(data[k])
+                if lp is not None:
+                    return lp
+    return None
 
 
 def _get(d: dict, *keys, default=None):
@@ -90,7 +103,7 @@ def _float(v) -> float | None:
 
 def _ring_of(r: dict) -> str | None:
     """The ring from a result row: a full ring field, or country/year/number parts."""
-    for key in ("ring_full", "full_ring", "ring_number_full", "ringNumber", "ring_number", "ring", "pigeonRing",
+    for key in ("pigeon.ring_description", "ring_description", "ring_full", "full_ring", "ring_number_full", "ringNumber", "ring_number", "ring", "pigeonRing",
                 "pigeon_ring", "pigeon.ring_full", "pigeon.ring_number", "pigeon.ringNumber", "pigeon.ring"):
         v = _get(r, key)
         if isinstance(v, (str, int)) and str(v).strip():
@@ -131,9 +144,12 @@ class BenzingResultsSource(ResultsSource):
     def list_seasons(self, loft_id: int) -> list[SeasonInfo]:
         html = self.client.get_text(f"{self.base}/lofts/{loft_id}")
         payload = payload_from_html(html)
-        if payload is None:
-            raise HealthError(f"loft {loft_id}: no Nuxt payload in page (site changed?)")
-        return [SeasonInfo(s["id"], s["year"], s["name"]) for s in find_seasons(payload)]
+        found = find_seasons(payload) if payload is not None else []
+        if not found:
+            found = seasons_from_nuxt2(html)  # live site (Oct 2026) uses a Nuxt 2 script payload
+        if not found:
+            raise HealthError(f"loft {loft_id}: no seasons found in the loft page (site changed?)")
+        return [SeasonInfo(x["id"], x["year"], x["name"]) for x in found]
 
     # ----------------------------------------------------------------- flights
     def list_flights(self, season_id: int) -> list[FlightInfo]:
@@ -206,7 +222,8 @@ class BenzingResultsSource(ResultsSource):
                 rows.append(
                     ResultRow(
                         ring_raw=ring,
-                        position=_int(_get(r, "position", "place", "rank", "pos", "ranking", "rank_position")),
+                        position=_int(_get(r, "arrival_order", "position", "place", "rank", "pos", "ranking",
+                                           "rank_position")),
                         team=str(team).strip() if team else None,
                         name=_get(r, "pigeon_name", "pigeonName", "pigeon.name", "name"),
                         speed=_float(_get(r, "speed", "velocity", "speed_mpm")),
@@ -214,10 +231,16 @@ class BenzingResultsSource(ResultsSource):
                         colour=_get(r, "color", "colour", "pigeon.color", "pigeon.colour"),
                     )
                 )
-            if not batch or len(batch) < PAGE_SIZE or (total is not None and len(rows) >= total):
+            last = _last_page(data)
+            if not batch or (total is not None and len(rows) >= total):
+                break
+            if last is not None:
+                if page >= last:
+                    break
+            elif len(batch) < PAGE_SIZE:
                 break
             page += 1
-            if page > 200:
+            if page > 500:
                 break
         complete = total is None or len(rows) == total
         note = ""
@@ -269,7 +292,13 @@ class BenzingResultsSource(ResultsSource):
                 if name:
                     teams.append(TeamEntry(str(name).strip(), rings,
                                            _int(_get(t, "registered_pigeons_count", "pigeons_count", "pigeonsCount"))))
-            if not batch or len(batch) < TEAM_PAGE_SIZE or (seen_total is not None and len(teams) >= seen_total):
+            last = _last_page(data)
+            if not batch or (seen_total is not None and len(teams) >= seen_total):
+                break
+            if last is not None:
+                if page >= last:
+                    break
+            elif len(batch) < TEAM_PAGE_SIZE:
                 break
             page += 1
             if page > 100:

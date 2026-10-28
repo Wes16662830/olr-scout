@@ -67,6 +67,10 @@ _SEX_MAP = {"C": "cock", "COCK": "cock", "V": "hen", "W": "hen", "H": "hen", "HE
 _RE_FULL = re.compile(
     r"\b(?P<country>[A-Z]{2,3})[\s\-/.]*(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<club>[A-Z]{2,6})[\s\-/.]*(?P<number>\d{2,8})\b"
 )
+# PL-25-0400-3205: country, year, numeric club, number
+_RE_NUMCLUB = re.compile(
+    r"\b(?P<country>[A-Z]{2,3})[\s\-/.]*(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<club>\d{2,5})[\s\-/.]+(?P<number>\d{1,8})\b"
+)
 # BE-25-6087189 | NL 2024-1234567 | ZA 26 123456
 _RE_CYN = re.compile(r"\b(?P<country>[A-Z]{2,3})[\s\-/.]*(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<number>\d{4,8})\b")
 # DV 06523-24-123
@@ -97,6 +101,9 @@ def parse_ring(text: str | None, default_year: int | None = None) -> Ring | None
         return Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"), m.group("number"), sex)
     for m in _RE_FULL.finditer(t):
         if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
+            return Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number"), sex)
+    for m in _RE_NUMCLUB.finditer(t):
+        if m.group("country") in _COUNTRIES:
             return Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number"), sex)
     for m in _RE_CYN.finditer(t):
         if m.group("country") in _COUNTRIES:
@@ -130,6 +137,9 @@ def find_rings(text: str | None) -> list[Ring]:
         add(m, Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"), m.group("number")))
     for m in _RE_FULL.finditer(t):
         if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
+            add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number")))
+    for m in _RE_NUMCLUB.finditer(t):
+        if m.group("country") in _COUNTRIES:
             add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number")))
     for m in _RE_CYN.finditer(t):
         if m.group("country") in _COUNTRIES:
