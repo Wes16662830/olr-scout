@@ -6,6 +6,8 @@ os.environ.setdefault("OLR_SCOUT_SCHEDULER", "0")
 os.environ.setdefault("OLR_SCOUT_DATABASE_URL", "sqlite://")
 os.environ.setdefault("OLR_SCOUT_PASSWORD", "test-password")
 os.environ.setdefault("OLR_SCOUT_SYNC_RESCORE", "1")
+# The sample auctions close on 28-31 Oct 2026; run every test as if it were the day before.
+os.environ.setdefault("OLR_SCOUT_FIXED_NOW", "2026-10-27T10:00:00+00:00")
 
 import pytest
 

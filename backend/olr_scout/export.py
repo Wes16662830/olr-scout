@@ -8,7 +8,7 @@ import io
 from .util.money import format_zar
 from .util.timeutil import fmt_local
 
-COLUMNS = ["Tier", "Score", "Site", "Auction", "Lot", "Ring", "Sex", "Seller", "Current", "Your max",
+COLUMNS = ["Tier", "Combined", "Racing", "Breeding", "Site", "Auction", "Lot", "Ring", "Sex", "Seller", "Current", "Your max",
            "Closes", "Match", "Families", "Ancestors verified", "Warning", "Link"]
 
 
@@ -18,8 +18,9 @@ def rows(suggestions: list[dict]) -> list[list]:
         lot = x["lot"]
         d = lot.score_detail or {}
         anc = d.get("ancestors") or {}
+        comb = (x.get("combined") or {}).get("score")
         out.append([
-            lot.tier, x["rank_score"], lot.source, lot.auction_name, lot.lot_no, lot.ring_raw, lot.sex, lot.seller,
+            lot.tier, comb, x["rank_score"], lot.breeding_score, lot.source, lot.auction_name, lot.lot_no, lot.ring_raw, lot.sex, lot.seller,
             x["price"], x["max"], fmt_local(lot.ends_at), lot.match_confidence,
             ", ".join(t["name"] for t in lot.family_tags or []),
             f'{anc.get("verified", 0)}/{anc.get("verified", 0) + anc.get("claimed", 0) + anc.get("mismatch", 0)}',
@@ -49,9 +50,9 @@ def to_xlsx(suggestions: list[dict]) -> bytes:
         c.font = Font(bold=True)
     for r in rows(suggestions):
         ws.append(r)
-    for col, width in zip("ABCDEFGHIJKLMNOP", [5, 7, 11, 28, 5, 18, 6, 22, 10, 10, 16, 9, 22, 10, 22, 50]):
+    for col, width in zip("ABCDEFGHIJKLMNOPQR", [5, 9, 7, 8, 11, 28, 5, 18, 6, 22, 10, 10, 16, 9, 22, 10, 22, 50]):
         ws.column_dimensions[col].width = width
-    for row in ws.iter_rows(min_row=2, min_col=9, max_col=10):
+    for row in ws.iter_rows(min_row=2, min_col=11, max_col=12):
         for c in row:
             c.number_format = '"R"#,##0'
     buf = io.BytesIO()

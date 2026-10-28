@@ -134,3 +134,43 @@ def breeding_score(progeny: OffspringRecord | None, siblings: OffspringRecord | 
         confidence = "low"
     return {"score": score, "confidence": confidence, "components": {k: round(v, 3) for k, v in comps.items()},
             "used": {k: round(v, 3) for k, v in used.items()}, "missing": missing}
+
+
+def evidence_check(s: Session, min_parents: int = 20) -> dict:
+    """How well did a parent's own racing score — and its breeder (team) record —
+    predict how its offspring raced? Uses every parent in the data that raced itself
+    and has offspring in OLR results. Spearman rank correlation with the offspring's
+    average long-race result (higher = predicts better)."""
+    from . import engine
+    from .tier_a import spearman
+
+    idx = ProgenyIndex(s)
+    ctx = engine.build_context(s)
+    racing, family, outcome, n_off = [], [], [], 0
+    for parent, kids in idx.offspring_of.items():
+        pb = idx.best.get(parent)
+        raced = [idx.best[k] for k in kids if k in idx.best]
+        if pb is None or not raced:
+            continue
+        mean_long = sum(b.long_score if b.long_score is not None else 1.0 for b in raced) / len(raced)
+        racing.append(engine.score_bird(pb, ctx).score)
+        fam = ctx.family_rate.get(pb.family_key)
+        family.append(fam[0] if fam else 0.05)
+        outcome.append(1.0 - mean_long)
+        n_off += len(raced)
+    n = len(outcome)
+    r_racing = spearman(racing, outcome) if n >= 3 else None
+    r_family = spearman(family, outcome) if n >= 3 else None
+    if n < min_parents:
+        verdict = (f"Only {n} parent(s) with raced offspring so far — too few to judge. Keep your chosen mix; "
+                   f"this check becomes meaningful from about {min_parents} parents.")
+    elif r_racing is not None and r_racing >= 0.3:
+        verdict = "Parents' own racing predicted their offspring well here — a higher racing share is supported."
+    elif r_family is not None and r_racing is not None and r_family > r_racing + 0.1:
+        verdict = ("The breeder (team) record predicted offspring better than the parent's own racing — "
+                   "giving breeding evidence more share is supported.")
+    else:
+        verdict = "Neither predicted offspring strongly — OLR results carry a lot of luck; keep a balanced mix."
+    return {"parents": n, "offspring": n_off, "racing_vs_offspring": None if r_racing is None else round(r_racing, 2),
+            "breeder_vs_offspring": None if r_family is None else round(r_family, 2), "verdict": verdict,
+            "min_parents": min_parents}

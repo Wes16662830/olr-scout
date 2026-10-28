@@ -113,3 +113,6 @@ tr.mine-bid td { background: rgba(180, 83, 9, .08); }
 .conf-high { color: var(--good); border-color: var(--good); }
 .conf-medium { color: var(--b); border-color: var(--b); }
 .conf-low { color: var(--warn); border-color: var(--warn); }
+.score.combined { font-size: 22px; }
+.score.sub { font-size: 14px; font-weight: 700; }
+.conditions { color: var(--text); }

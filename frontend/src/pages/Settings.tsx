@@ -10,14 +10,16 @@ type Prefs = {
   own: { team_names: string[]; usernames: string[]; exclude_own: boolean };
   weights: Record<string, number>; family_ceiling: number; mismatch_threshold: number; tier_c_cap: number;
   results_seasons: number;
-  rank_by: string; breeding_weights: Record<string, number>;
+  rank_by: string; breeding_weights: Record<string, number>; combined_racing_weight: number;
 };
+type Check = { parents: number; offspring: number; racing_vs_offspring: number | null; breeder_vs_offspring: number | null; verdict: string; min_parents: number };
 type Olr = { id: number; name: string; loft_id: number | null; aliases: string[]; enabled: boolean; auto_discovered: boolean;
   seasons: { id: number; year: number; registered: number | null; ingested_at: string | null; flights: number }[] };
 
 export default function Settings() {
   const { data } = useData<Prefs>("/settings");
   const olrs = useData<Olr[]>("/olrs");
+  const check = useData<Check>("/scores/check");
   const [p, setP] = useState<Prefs | null>(null);
   const [msg, setMsg] = useState("");
   const [newFam, setNewFam] = useState("");
@@ -95,11 +97,32 @@ export default function Settings() {
         <div className="row wrap">
           <label>Order suggestions by
             <select value={p.rank_by} onChange={(e) => setP({ ...p, rank_by: e.target.value })}>
+              <option value="combined">Combined score (racing + breeding, your mix)</option>
               <option value="racing">Racing score (how the bird raced)</option>
               <option value="breeding">Breeding score (offspring, siblings, parents)</option>
             </select>
           </label>
         </div>
+        <h3>Combined score mix</h3>
+        <div className="row wrap">
+          <label>Racing {p.combined_racing_weight}% · Breeding {100 - p.combined_racing_weight}%
+            <input type="range" min={50} max={100} step={5} value={p.combined_racing_weight}
+              onChange={(e) => setP({ ...p, combined_racing_weight: Number(e.target.value) })} />
+          </label>
+        </div>
+        <p className="small muted">Racing stays at least 50% (own racing leads). The breeding share is used in full only
+          for high-confidence breeding evidence: 70% of it for medium, 40% for low; the rest goes back to racing. With no
+          breeding evidence the combined score is the racing score.</p>
+        {check.data && (
+          <div className="banner">
+            <b>Evidence check — what has predicted offspring so far:</b> {check.data.parents} parent(s) with{" "}
+            {check.data.offspring} raced offspring in your data.
+            {check.data.racing_vs_offspring !== null && <> Parent's own racing vs offspring: <b>{check.data.racing_vs_offspring}</b>.</>}
+            {check.data.breeder_vs_offspring !== null && <> Breeder record vs offspring: <b>{check.data.breeder_vs_offspring}</b>.</>}
+            {" "}{check.data.verdict}
+            <div className="small">(Rank correlation: 1 = perfect, 0 = no link. It strengthens as OLR Scout sees more auctions.)</div>
+          </div>
+        )}
         <h3>Breeding score weights</h3>
         <p className="small muted">Only used when a lot has offspring, sibling or verified-parent evidence.</p>
         <div className="row wrap">{Object.entries(p.breeding_weights || {}).map(([k, v]) => (

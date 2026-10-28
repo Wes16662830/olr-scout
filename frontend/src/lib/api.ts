@@ -81,12 +81,14 @@ export interface LotCard {
   bird_name?: string | null;
   breeding_score?: number | null;
   breeding?: Breeding | null;
+  combined?: { score: number | null; racing_share: number | null; breeding_share: number | null; basis: string } | null;
   last_bid?: { amount: number; bidder: string | null; at: string | null; count: number | null; bidder_shown: boolean } | null;
   bird?: BirdSummary | null;
   lineage?: Lineage;
 }
 
-export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; pct: number | null; long: boolean; final: boolean }
+export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; pct: number | null; long: boolean; final: boolean;
+  winner_speed?: number | null; speed_class?: string | null; distance_band?: string | null }
 export interface BirdSummary {
   ring: string; name: string | null; colour: string | null; sex: string | null;
   breeder: string | null; breeder_country: string | null; olr: string; season: number; registered: number | null;
@@ -95,7 +97,9 @@ export interface BirdSummary {
   is_ace: boolean; long_score: number | null; final_position: number | null;
   hard_score: number | null; arrival_rate: number | null; lost_after: string | null;
   speed_index: number | null; speed_pct: number | null;
+  best_speed?: ConditionStats | null; best_distance?: ConditionStats | null;
 }
+export interface ConditionStats { by: Record<string, { races: number; avg: number }>; best: string | null }
 export interface OffspringRec { n: number; aces: number; ace_rate: number; mean_long: number;
   birds: { ring: string; name: string | null; olr: string; season: number; long_score: number | null; is_ace: boolean }[] }
 export interface Breeding {

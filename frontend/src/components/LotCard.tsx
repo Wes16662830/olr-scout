@@ -62,7 +62,7 @@ function BirdBlock({ b, seller }: { b: BirdSummary; seller: string | null }) {
       <div className="races" title="Position / birds arrived. Underlined = one of the 5 longest races.">
         {b.races.map((r) => (
           <span key={r.label + r.name} className={`race ${chipClass(r.pct)} ${r.long ? "long" : ""}`}
-            title={`${r.name}${r.km ? ` · ${r.km} km` : ""}${r.position ? ` · ${ordinal(r.position)} of ${r.arrived ?? "?"}` : " · did not arrive"}`}>
+            title={`${r.name}${r.km ? ` · ${r.km} km` : ""}${r.winner_speed ? ` · winner ${Math.round(r.winner_speed)} m/min (${r.speed_class ?? "?"} race)` : ""}${r.position ? ` · ${ordinal(r.position)} of ${r.arrived ?? "?"}` : " · did not arrive"}`}>
             <small>{r.label}</small> {r.position ? `${r.position}/${r.arrived ?? "?"}` : "–"}
           </span>
         ))}
@@ -80,6 +80,26 @@ function BirdBlock({ b, seller }: { b: BirdSummary; seller: string | null }) {
         {b.hard_score !== null && ` · hardest races avg top ${pct(b.hard_score)}`}
         {b.speed_index !== null && ` · ${(b.speed_index * 100).toFixed(1)}% of winner's speed (long races)`}
       </div>
+      <Conditions b={b} />
+    </div>
+  );
+}
+
+const SPEED_TEXT: Record<string, string> = { fast: "fast races (likely tailwind)", medium: "medium-speed races", slow: "slow, hard races (likely headwind)" };
+
+function Conditions({ b }: { b: BirdSummary }) {
+  const sp = b.best_speed, ds = b.best_distance;
+  const fmt = (st: { races: number; avg: number }) => `avg top ${pct(st.avg)} over ${st.races}`;
+  const bits: string[] = [];
+  if (sp?.best) bits.push(`${SPEED_TEXT[sp.best] ?? sp.best} (${fmt(sp.by[sp.best])})`);
+  if (ds?.best) bits.push(`${ds.best} (${fmt(ds.by[ds.best])})`);
+  if (!bits.length) {
+    if (!sp || !Object.keys(sp.by).length) return null;
+    return <div className="small muted">Race conditions: no clear preference this season.</div>;
+  }
+  return (
+    <div className="small conditions" title="Races are classed by the winner's speed against the season's other races (thirds) and by distance. One season gives only a few races per class, and weather is mostly luck — a hint, not a prediction for offspring.">
+      <span className="label">Best this season in:</span> {bits.join(" · ")}
     </div>
   );
 }
@@ -160,12 +180,17 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
         <div className="card-main">
           <div className="row wrap">
             <TierBadge tier={lot.tier} />
+            {lot.combined?.score != null && (
+              <span className="score combined" title={`Combined: ${lot.combined.basis}`}>
+                <small>Combined </small>{lot.combined.score.toFixed(0)}
+              </span>
+            )}
             {lot.score !== null && (
-              <span className="score" title="Racing score: how this bird (or its verified ancestors) raced">
+              <span className="score sub" title="Racing score: how this bird (or its verified ancestors) raced">
                 <small>Racing </small>{lot.rank_score?.toFixed(0)}
               </span>
             )}
-            <span className={`score breed ${lot.breeding_score == null ? "none" : ""}`}
+            <span className={`score sub breed ${lot.breeding_score == null ? "none" : ""}`}
               title="Breeding score: offspring, siblings and verified parents in OLR results">
               <small>Breeding </small>{lot.breeding_score == null ? "–" : lot.breeding_score.toFixed(0)}
             </span>

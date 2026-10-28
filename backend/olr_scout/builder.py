@@ -170,13 +170,11 @@ def build_plan(s: Session, goal: dict, save: bool = True) -> dict:
         if not fams:
             continue
         family_strength = max(fam_rate.get(f, FIELD_RATE) for f in fams) / FIELD_RATE * TIER_FACTOR[lot.tier]
-        # Own racing leads: the racing score (own results for Tier A, verified ancestors for
-        # Tier B) sets the strength; breeding evidence can move it by at most ±25%.
-        base = (lot.score / 25.0) if lot.score is not None else family_strength
-        adjust = 1.0
-        if lot.breeding_score is not None:
-            adjust = 1.0 + max(-0.25, min(0.25, (lot.breeding_score - 50.0) / 200.0))
-        strength = base * adjust
+        # Plan on the combined score (your racing/breeding mix, racing at least 50%).
+        from .scoring.engine import combined_score
+
+        comb = combined_score(lot, prefs)["score"]
+        strength = (comb / 25.0) if comb is not None else family_strength
         price = lot.current_bid if lot.current_bid is not None else (lot.starting_bid or 0)
         limit = preferences.lot_max(lot, lot.family_tags or [], prefs)
         next_bid = price + (MIN_INCREMENT if lot.current_bid else 0)
@@ -249,7 +247,7 @@ def build_plan(s: Session, goal: dict, save: bool = True) -> dict:
 
     items = [{"lot_id": c.id, "label": c.label, "sex": c.sex, "tier": c.tier, "families": c.families,
               "strength": round(c.strength, 3), "breeding": c.breeding, "current": c.price, "max_bid": c.max_bid,
-              "url": c.url, "basis": "own racing + breeding evidence" if c.breeding is not None else "own racing"}
+              "url": c.url, "basis": "combined (racing + breeding)" if c.breeding is not None else "racing only"}
              for c in chosen]
     assert not budget or total <= budget
     result = {"goal": goal, "items": items, "total_max": total, "budget": budget,

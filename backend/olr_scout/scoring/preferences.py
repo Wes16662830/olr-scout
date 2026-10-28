@@ -52,8 +52,10 @@ DEFAULTS: dict = {
     # How many of each OLR's newest seasons (with races) to download. Older seasons
     # verify parents (Tier B), so raising this improves pedigree checks.
     "results_seasons": 2,
-    # Suggestions order: "racing" (tier, then racing score) or "breeding" (breeding score first).
-    "rank_by": "racing",
+    # Suggestions order: "combined" (default), "racing" or "breeding".
+    "rank_by": "combined",
+    # Combined score: share of racing (50–100%); the rest is breeding, scaled by its confidence.
+    "combined_racing_weight": 70,
     "breeding_weights": {"progeny": 40.0, "siblings": 25.0, "parents": 15.0, "breeder": 10.0, "own": 10.0},
 }
 
@@ -76,6 +78,13 @@ def save(s: Session, prefs: dict) -> dict:
     if merged["max_bid"] is None or int(merged["max_bid"]) < 0:
         raise ValueError("max_bid must be a positive amount in rand")
     from .tier_a import CORE, CORE_MIN_SHARE
+
+    try:
+        rw = float(merged.get("combined_racing_weight", 70))
+    except (TypeError, ValueError):
+        raise ValueError("Combined score: racing share must be a number from 50 to 100")
+    if not 50 <= rw <= 100:
+        raise ValueError("Combined score: racing share must be 50–100% — own racing always leads")
 
     w = merged.get("weights") or {}
     total = sum(float(v) for v in w.values()) or 1.0

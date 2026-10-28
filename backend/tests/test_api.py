@@ -35,7 +35,7 @@ def test_suggestions_settings_export(api):
     assert api.put("/api/settings", json=s).json()["max_bid"] == 1000
     assert all(i["price"] <= 1000 for i in api.get("/api/suggestions").json()["items"])
     csv = api.get("/api/export.csv")
-    assert csv.status_code == 200 and csv.text.startswith("Tier,Score")
+    assert csv.status_code == 200 and csv.text.startswith("Tier,Combined,Racing,Breeding")
     assert api.get("/api/export.xlsx").content[:2] == b"PK"
     wa = api.get("/api/export/whatsapp").text
     assert wa.startswith("*OLR Scout suggestions*") and "```" in wa
@@ -83,3 +83,24 @@ def test_card_shows_latest_bid_and_bidder(api):
     assert tp["last_bid"]["at"] and tp["last_bid"]["count"] == 3 and tp["last_bid"]["bidder_shown"]
     elite = next(c for c in cards.values() if c["source"] == "elite" and c["current_bid"] == 1200)
     assert elite["last_bid"] == {"amount": 1200, "bidder": None, "at": None, "count": 4, "bidder_shown": False}
+
+
+def test_best_race_conditions(session):
+    from olr_scout.models import BirdResult, Flight
+    from olr_scout.serialize import bird_summary
+
+    from .helpers import make_season
+
+    # 6 races at 100..600 km; the bird is near the top in the 3 slowest races, mid-field in the fast ones.
+    _, birds = make_season(session, "AfrikaPro", 2026, {"ZA-26-100": ("A Lofts", [50, 50, 50, 2, 3, 1])}, pad=10)
+    bird = birds["ZA-26-100"]
+    flights = session.query(Flight).filter(Flight.season_id == bird.season_id).order_by(Flight.id).all()
+    winner_speeds = [1600, 1550, 1500, 1100, 1050, 1000]  # races 4-6 were slow
+    for f, sp in zip(flights, winner_speeds):
+        session.add(BirdResult(bird_id=next(iter(birds.values())).id + 1, flight_id=f.id, position=1, speed=sp))
+    session.flush()
+    out = bird_summary(session, bird)
+    assert out["best_speed"]["best"] == "slow"
+    assert out["best_speed"]["by"]["slow"]["races"] == 2  # thirds of 6 races: the 2 slowest
+    assert [r["speed_class"] for r in out["races"]] == ["fast", "fast", "medium", "medium", "slow", "slow"]
+    assert out["best_distance"]["best"] == "450 km +"

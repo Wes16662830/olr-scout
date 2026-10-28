@@ -23,6 +23,10 @@ sys.path.insert(0, str(ROOT))
 os.environ["OLR_SCOUT_SCHEDULER"] = "0"
 os.environ["OLR_SCOUT_DATABASE_URL"] = "sqlite://"
 os.environ["OLR_SCOUT_PASSWORD"] = "demo"
+os.environ["OLR_SCOUT_SKIP_ENV_FILE"] = "1"
+# The sample auctions close on 28-31 Oct 2026: build as of the day before (the demo page
+# shifts close times to the viewer's clock).
+os.environ.setdefault("OLR_SCOUT_FIXED_NOW", "2026-10-27T10:00:00+00:00")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import select  # noqa: E402
@@ -121,7 +125,7 @@ def main() -> int:
     snap: dict = {"generated_at": now_utc().isoformat(), "get": {}, "plans": {}}
     for path in ["/me", "/suggestions", "/closing?hours=24", "/watchlist", "/alerts", "/alerts?unread=true",
                  "/families?min_entries=1&limit=300", "/olrs", "/inventory", "/pedigree/review", "/sources",
-                 "/settings", "/push/key", "/builder/plans", "/export.csv", "/export/whatsapp"]:
+                 "/settings", "/push/key", "/builder/plans", "/export.csv", "/export/whatsapp", "/scores/check"]:
         snap["get"][path] = get(path)
     snap["get"]["/lots?status=all"] = get("/lots?status=all")
     snap["get"]["/results/auctions"] = get("/results/auctions")

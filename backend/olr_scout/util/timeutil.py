@@ -30,7 +30,15 @@ MONTHS = {
 }
 
 
+import os as _os
+
+# Tests pin the clock (the sample auctions have fixed close times); the app never sets this.
+_FIXED_NOW = _os.environ.get("OLR_SCOUT_FIXED_NOW")
+
+
 def now_utc() -> datetime:
+    if _FIXED_NOW:
+        return datetime.fromisoformat(_FIXED_NOW)
     return datetime.now(timezone.utc)
 
 

@@ -73,8 +73,8 @@ export default function Builder() {
           <div className="panel">
             <h2>Shopping plan</h2>
             <p><b>Buy these {plan.items.length} lots, total max {zar(plan.total_max)}</b> (budget {zar(plan.budget)})</p>
-            <table><thead><tr><th>Lot</th><th>Sex</th><th>Tier</th><th>Family</th><th>Breeding</th><th>Now</th><th>Max bid</th><th></th></tr></thead>
-              <tbody>{plan.items.map((i) => <tr key={i.lot_id}><td>{i.label}</td><td>{i.sex}</td><td>{i.tier}</td><td>{i.families.join(", ")}</td><td>{i.breeding !== null ? i.breeding.toFixed(0) : <span className="muted small">family record only</span>}</td><td>{zar(i.current)}</td><td><b>{zar(i.max_bid)}</b></td><td><a href={i.url} target="_blank" rel="noopener noreferrer">Open lot ↗</a></td></tr>)}</tbody></table>
+            <table><thead><tr><th>Lot</th><th>Sex</th><th>Tier</th><th>Family</th><th>Basis</th><th>Now</th><th>Max bid</th><th></th></tr></thead>
+              <tbody>{plan.items.map((i) => <tr key={i.lot_id}><td>{i.label}</td><td>{i.sex}</td><td>{i.tier}</td><td>{i.families.join(", ")}</td><td className="small">{i.basis}{i.breeding !== null ? ` (breeding ${i.breeding.toFixed(0)})` : ""}</td><td>{zar(i.current)}</td><td><b>{zar(i.max_bid)}</b></td><td><a href={i.url} target="_blank" rel="noopener noreferrer">Open lot ↗</a></td></tr>)}</tbody></table>
             {plan.notes.map((n) => <p key={n} className="muted">{n}</p>)}
             {plan.excluded.length > 0 && <details><summary>{plan.excluded.length} lots left out</summary><ul>{plan.excluded.map((e) => <li key={e.lot_id}>lot {e.lot_id}: {e.reason}</li>)}</ul></details>}
           </div>

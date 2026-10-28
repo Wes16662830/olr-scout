@@ -22,18 +22,64 @@ def _race_label(f: Flight, i: int) -> str:
     return f"R{f.race_no}" if f.race_no else f"R{i}"
 
 
+SPEED_CLASS_TEXT = {"fast": "fast (likely tailwind)", "medium": "medium", "slow": "slow (likely headwind / hard)"}
+
+
+def _race_conditions(s, season_id: int, flights: list) -> dict[int, dict]:
+    """Per race: winner's speed (m/min, from stored results), its speed class within the
+    season (fast / medium / slow by thirds) and distance band."""
+    from sqlalchemy import func
+
+    from .models import BirdResult
+
+    speeds = dict(s.execute(select(BirdResult.flight_id, func.max(BirdResult.speed))
+                            .where(BirdResult.flight_id.in_([f.id for f in flights]))
+                            .group_by(BirdResult.flight_id)).all())
+    rated = sorted((v, fid) for fid, v in speeds.items() if v)
+    cls: dict[int, str] = {}
+    if len(rated) >= 3:
+        third = len(rated) / 3
+        for i, (_, fid) in enumerate(rated):
+            cls[fid] = "slow" if i < third else ("medium" if i < 2 * third else "fast")
+    out = {}
+    for f in flights:
+        km = f.distance_km
+        band = None if km is None else ("up to 250 km" if km < 250 else "250–450 km" if km < 450 else "450 km +")
+        out[f.id] = {"winner_speed": speeds.get(f.id), "speed_class": cls.get(f.id), "distance_band": band}
+    return out
+
+
+def _best_condition(races: list[dict], key: str) -> dict | None:
+    """Average placing per condition (a missed race counts as 100%); the best one is named
+    only with 2+ races in it and a clear gap (10 points) to the worst."""
+    groups: dict[str, list[float]] = {}
+    for r in races:
+        k = r.get(key)
+        if k:
+            groups.setdefault(k, []).append(r["pct"] if r["pct"] is not None else 1.0)
+    stats = {k: {"races": len(v), "avg": round(sum(v) / len(v), 4)} for k, v in groups.items()}
+    usable = {k: v for k, v in stats.items() if v["races"] >= 2}
+    if len(usable) < 2:
+        return {"by": stats, "best": None}
+    best = min(usable, key=lambda k: usable[k]["avg"])
+    worst = max(usable, key=lambda k: usable[k]["avg"])
+    clear = usable[worst]["avg"] - usable[best]["avg"] >= 0.10
+    return {"by": stats, "best": best if clear else None}
+
+
 def bird_summary(s, bird: Bird) -> dict:
     """Who entered the bird and how it did, race by race (from OLR results)."""
     flights = s.scalars(select(Flight).where(Flight.season_id == bird.season_id, Flight.is_training.is_(False))
                         .order_by(Flight.flown_at, Flight.id)).all()
     long_ids = set(long_flight_ids([FlightIn(f.id, f.distance_km) for f in flights]))
     pos = {r.flight_id: r.position for r in bird.results}
+    cond = _race_conditions(s, bird.season_id, flights)
     races = []
     for i, f in enumerate(flights, 1):
         p = pos.get(f.id)
         races.append({"label": _race_label(f, i), "name": f.name, "km": f.distance_km, "position": p,
                       "arrived": f.arrived, "pct": round(p / f.arrived, 4) if p and f.arrived else None,
-                      "long": f.id in long_ids, "final": f.is_final})
+                      "long": f.id in long_ids, "final": f.is_final, **cond.get(f.id, {})})
     flown = [r for r in races if r["position"]]
     best = min(flown, key=lambda r: r["pct"] if r["pct"] is not None else 9) if flown else None
     return {
@@ -45,6 +91,8 @@ def bird_summary(s, bird: Bird) -> dict:
         "is_ace": bird.is_ace, "long_score": bird.long_score, "final_position": bird.final_position,
         "hard_score": bird.hard_score, "arrival_rate": bird.arrival_rate, "lost_after": bird.lost_after,
         "speed_index": bird.speed_index, "speed_pct": bird.speed_pct,
+        "best_speed": _best_condition(races, "speed_class"),
+        "best_distance": _best_condition(races, "distance_band"),
     }
 
 
@@ -121,6 +169,7 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
         "fetched_at": iso(lot.fetched_at),
         "breeding_score": lot.breeding_score,
         "breeding": d.get("breeding"),
+        "combined": engine.combined_score(lot, prefs),
     }
     sess = object_session(lot)
     if sess is not None:

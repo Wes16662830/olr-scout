@@ -83,3 +83,65 @@ def test_own_racing_never_carries_more_than_its_share():
     assert weak_parent["score"] == round(100 * (0.9 * 0.2 + 0.1 * 1.0), 1)
     none = breeding_score(None, None, [], breeder_rate=0.2, own_racing=95.0)
     assert none["score"] is None
+
+
+def test_combined_score(session):
+    import pytest
+
+    from olr_scout.scoring import preferences
+
+    _world(session)
+    no_ev = make_lot(session, 1, ring_raw="ZA-25-OTHER-909", current_bid=500)
+    young = make_lot(session, 2, ring_raw="ZA-25-KID-201", current_bid=500, description="Sire: ZA-23-SIRE-101.")
+    session.flush()
+    engine.score_all(session)
+    p = preferences.load(session)
+
+    c = engine.combined_score(no_ev, p)
+    assert c["score"] == engine.rank_score(no_ev, p) and c["breeding_share"] == 0.0  # racing only
+
+    c = engine.combined_score(young, p)
+    conf = young.score_detail["breeding"]["confidence"]
+    b = 0.30 * engine.CONFIDENCE_FACTOR[conf]
+    assert c["breeding_share"] == pytest.approx(b, abs=1e-3)
+    assert c["score"] == pytest.approx((1 - b) * engine.rank_score(young, p) + b * young.breeding_score, abs=0.1)
+
+    p["combined_racing_weight"] = 100  # racing only
+    assert engine.combined_score(young, p)["score"] == engine.rank_score(young, p)
+
+
+def test_combined_racing_share_at_least_half(session):
+    import pytest
+
+    from olr_scout.scoring import preferences
+
+    p = preferences.load(session)
+    p["combined_racing_weight"] = 40
+    with pytest.raises(ValueError, match="50–100%"):
+        preferences.save(session, p)
+
+
+def test_rank_by_combined_is_default(session):
+    from olr_scout.scoring import preferences
+
+    _world(session)
+    a = make_lot(session, 1, ring_raw="ZA-25-KID-201", current_bid=500, description="Sire: ZA-23-SIRE-101.")
+    b = make_lot(session, 2, ring_raw="ZA-25-OTHER-909", current_bid=500)
+    session.flush()
+    engine.score_all(session)
+    p = preferences.load(session)
+    assert p["rank_by"] == "combined"
+    items = engine.suggestions(session, p)
+    scores = [x["combined"]["score"] for x in items if x["lot"].tier == "A"]
+    assert scores == sorted(scores, reverse=True)
+
+
+def test_evidence_check_reports_small_samples_honestly(session):
+    from olr_scout.scoring.progeny import evidence_check
+
+    _world(session)
+    session.flush()
+    engine.score_all(session)
+    r = evidence_check(session)
+    assert r["parents"] == 1 and r["offspring"] == 3
+    assert "too few to judge" in r["verdict"]

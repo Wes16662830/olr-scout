@@ -51,7 +51,13 @@ def test_final_read_after_close(session, client, web):
     sources = build_sources(client)
     refresh.refresh_all(session, sources, only=["toppigeon"])
     lot = session.scalar(select(Lot).where(Lot.lot_key.like("%7829%")))
-    lot.ends_at = now_utc() - timedelta(minutes=3)  # closed 3 minutes ago, still listed as live
+    ended = now_utc() - timedelta(minutes=3)  # closed 3 minutes ago, still listed as live
+    local = ended.astimezone(__import__("olr_scout.config", fromlist=["TZ"]).TZ)
+    html = open(__file__.replace("test_auction_results.py", "fixtures/toppigeon/lot-1.html")).read()
+    web.add("https://toppigeon.co.za/product/lot-1-za-2026-port-7829",
+            httpx.Response(200, headers={"content-type": "text/html"},
+                           text=html.replace("October 28, 2026 14:02", local.strftime("%B %d, %Y %H:%M"))))
+    lot.ends_at = ended
     session.commit()
     web.calls.clear()
     refresh.hot_refresh(session, sources)

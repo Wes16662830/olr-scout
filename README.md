@@ -165,6 +165,22 @@ The card shows two numbers.
 * Settings → Ranking orders Suggestions by either score; the Family Builder
   plans on the breeding score where a lot has one.
 
+### Combined score (default ranking)
+
+`combined = r × racing + b × breeding`. You choose the racing share (50–100%,
+default 70%). The breeding share is used in full only for high-confidence
+breeding evidence (medium 70% of it, low 40%); the rest goes back to racing,
+and without breeding evidence the combined score is the racing score.
+Settings shows an **evidence check**: across parents in your data that raced
+and have raced offspring, how well the parent's own racing score and its
+breeder record ranked the offspring (Spearman), with a verdict once there are
+about 20 parents.
+
+Cards also show the race **conditions** a bird did best in this season: races
+classed fast / medium / slow by the winner's speed (thirds of the season) and
+by distance band, named only with 2+ races per class and a clear gap. It is a
+hint about the bird, not a proven trait of its offspring.
+
 All weights and thresholds are editable in **Settings**.
 
 ## How to add a new auction site

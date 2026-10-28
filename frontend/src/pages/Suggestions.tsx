@@ -58,7 +58,9 @@ export default function Suggestions() {
         Active lots at or under your max ({zar(data?.max_bid)}),{" "}
         {data?.rank_by === "breeding"
           ? "lots with breeding evidence first (highest breeding score), then by tier and racing score."
-          : "ranked by evidence tier, then racing score weighted by your family preferences."}{" "}
+          : data?.rank_by === "racing"
+            ? "ranked by evidence tier, then racing score weighted by your family preferences."
+            : "ranked by evidence tier, then the combined score (your racing / breeding mix; racing leads)."}{" "}
         Tier C is seller-claimed and capped at 60; Tier D is never suggested. Change the order in Settings → Ranking.
       </p>
       {data?.diagnosis && <WhyNoScores d={data.diagnosis} />}

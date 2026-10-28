@@ -325,6 +325,32 @@ def rank_score(lot: Lot, prefs: dict) -> float | None:
 _score_lock = __import__("threading").Lock()
 
 
+CONFIDENCE_FACTOR = {"high": 1.0, "medium": 0.7, "low": 0.4}
+
+
+def combined_score(lot: Lot, prefs: dict) -> dict:
+    """Racing and breeding in one number for choosing a bird to breed a future winner.
+
+    combined = r·racing + b·breeding, where b = (1 − chosen racing share) × the breeding
+    score's confidence factor (high 1.0, medium 0.7, low 0.4) and r = 1 − b. Without a
+    breeding score it is the racing score. The family-preference multiplier and the Tier C
+    cap apply as for the racing score."""
+    racing = rank_score(lot, prefs)
+    if racing is None:
+        return {"score": None, "racing_share": None, "breeding_share": None, "basis": "no racing score"}
+    share = min(100.0, max(50.0, float(prefs.get("combined_racing_weight", 70)))) / 100.0
+    br = (lot.score_detail or {}).get("breeding") or {}
+    if lot.breeding_score is None:
+        return {"score": racing, "racing_share": 1.0, "breeding_share": 0.0,
+                "basis": "racing only (no breeding evidence)"}
+    b = (1.0 - share) * CONFIDENCE_FACTOR.get(br.get("confidence"), 0.4)
+    score = (1.0 - b) * racing + b * lot.breeding_score
+    if lot.tier == "C":
+        score = min(score, float(prefs.get("tier_c_cap", 60.0)))
+    return {"score": round(score, 1), "racing_share": round(1.0 - b, 3), "breeding_share": round(b, 3),
+            "basis": f"racing {round(100 * (1 - b))}% · breeding {round(100 * b)}% ({br.get('confidence')} confidence)"}
+
+
 def score_all(s: Session, lots: list[Lot] | None = None) -> int:
     """Match and score lots. Serialised: settings saves, refreshes and the results
     ingest may all ask for it at once."""
@@ -397,7 +423,11 @@ def suggestions(s: Session, prefs: dict | None = None, include_over_max: bool = 
         out.append({"lot": lot, "max": limit, "price": price, "rank_score": rs,
                     "near_max": price >= limit - int(prefs.get("near_max_buffer", 0)),
                     "value": round(rs / max(price, 100) * 1000, 2) if rs is not None else None})
-    if prefs.get("rank_by") == "breeding":
+    for x in out:
+        x["combined"] = combined_score(x["lot"], prefs)
+    if prefs.get("rank_by", "combined") == "combined":
+        out.sort(key=lambda x: (TIER_ORDER.get(x["lot"].tier, 9), -(x["combined"]["score"] or 0), x["price"]))
+    elif prefs.get("rank_by") == "breeding":
         # Breeding evidence first (highest breeding score), then the usual order for the rest.
         out.sort(key=lambda x: (x["lot"].breeding_score is None, -(x["lot"].breeding_score or 0),
                                 TIER_ORDER.get(x["lot"].tier, 9), -(x["rank_score"] or 0), x["price"]))

@@ -618,6 +618,13 @@ def _rescore_in_background() -> None:
     threading.Thread(target=run, daemon=True, name="rescore").start()
 
 
+@protected.get("/scores/check")
+def scores_check(s: Session = Depends(get_session)):
+    from .scoring.progeny import evidence_check
+
+    return evidence_check(s)
+
+
 # ------------------------------------------------------------------ auction results
 @protected.get("/results/auctions")
 def results_auctions(s: Session = Depends(get_session)):
