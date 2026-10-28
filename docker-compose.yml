@@ -1,0 +1,16 @@
+services:
+  olr-scout:
+    build:
+      context: .
+      args:
+        INSTALL_PLAYWRIGHT: "0"   # "1" adds Chromium for the AfriPigeon / PAH DOM fallback (~400 MB)
+    env_file: .env
+    environment:
+      OLR_SCOUT_DATABASE_URL: sqlite:////app/backend/data/olr_scout.db
+    volumes:
+      - olr-data:/app/backend/data
+    ports:
+      - "127.0.0.1:8000:8000"   # keep it local; put Caddy/nginx with HTTPS in front on a VPS
+    restart: unless-stopped
+volumes:
+  olr-data:

@@ -1,0 +1,6 @@
+# Only needed for the features named. The app runs without them and says so.
+playwright>=1.44        # Rendered-DOM fallback for AfriPigeon / Pigeon Auction House
+pytesseract>=0.3.10     # Pedigree-image OCR (also needs the tesseract binary)
+pillow>=10.0
+pypdf>=4.0              # Text from pedigree PDFs (Elite pdf_url)
+pywebpush>=2.0          # Web push alerts (needs VAPID keys)

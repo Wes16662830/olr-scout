@@ -1,0 +1,15 @@
+[
+ {"id": "a1", "lot_number": 1, "title": "Blue cock – 1st Ace Pigeon lines", "description": "Kittel x Janssen. Son of ace BE-21-1000123.",
+  "sex": "Cock", "year": 2026, "colour": "Blue", "strain": "Kittel", "bloodline_name": "Janssen", "ring_number": "9822 OERF",
+  "seller_id": "loft-1", "loft_id": "loft-1", "starting_bid": 500, "reserve_price": 1500, "current_bid": 1200, "total_bids": 4,
+  "ends_at": "2026-10-28T18:00:00+00:00", "starts_at": "2026-10-20T10:00:00+00:00", "status": "live",
+  "pedigree": null, "performance_highlights": "Bred from our top OLR performers", "pdf_url": null, "video_url": null},
+ {"id": "a2", "lot_number": 2, "title": "Hen ZA 2026 OERF 9823", "description": "Full sister to lot 1.",
+  "sex": "Hen", "year": 2026, "colour": "Chequer", "strain": "Kittel", "bloodline_name": null, "ring_number": "9823 OERF",
+  "seller_id": "loft-1", "loft_id": "loft-1", "starting_bid": 500, "reserve_price": null, "current_bid": null, "total_bids": 0,
+  "ends_at": "2026-10-28T18:02:00+00:00", "status": "live", "pedigree": "Sire: ZA 2023 PORT 555", "performance_highlights": null,
+  "pdf_url": "https://amsnfjkefytwxipkqzev.supabase.co/storage/v1/object/public/pedigrees/a2.pdf", "video_url": null},
+ {"id": "a3", "lot_number": 3, "title": "Own bird", "description": "", "sex": "Cock", "year": 2025, "ring_number": "1111 OERF",
+  "seller_id": "loft-2", "loft_id": "loft-2", "starting_bid": 800, "current_bid": 900, "total_bids": 1,
+  "ends_at": "2026-10-28T18:04:00+00:00", "status": "live"}
+]

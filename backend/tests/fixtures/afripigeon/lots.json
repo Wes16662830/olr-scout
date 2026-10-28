@@ -1,0 +1,6 @@
+{"lots": [
+ {"id": 901, "lot_number": 1, "ring_number": "ZA 2026 MARL 3301", "title": "Marlbank Encore lot 1", "sex": "Cock",
+  "current_bid": 2500, "starting_bid": 1000, "end_date": "2026-10-31", "end_time": "14:00", "bid_count": 3},
+ {"id": 902, "lot_number": 2, "ring_number": "ZA 2026 MARL 3302", "title": "Marlbank Encore lot 2", "sex": "Hen",
+  "current_bid": null, "starting_bid": 1000, "end_date": "2026-10-31", "end_time": "14:02"}
+]}
