@@ -161,10 +161,15 @@ def _long_for(b: Bird, emphasis: str) -> float:
 
 
 def _consistency(b: Bird, ctx: Context) -> float:
-    races = [r for r in b.results if r.flight and not r.flight.is_training]
-    n_races = sum(1 for f in b.season.flights if not f.is_training) or 1
-    good = sum(1 for r in races if r.position and r.flight.arrived and r.position / r.flight.arrived <= 0.5)
-    return good / n_races
+    """Top-half finishes across the season's long and hard races (see tier_a.consistency)."""
+    from .tier_a import FlightIn, consistency, hard_flight_ids, long_flight_ids
+
+    flights = [f for f in b.season.flights if not f.is_training]
+    fin = [FlightIn(f.id, f.distance_km, f.arrived, False, f.is_final, f.name, f.basketed, f.race_no) for f in flights]
+    ids = set(long_flight_ids(fin)) | set(hard_flight_ids(fin))
+    pos = {r.flight_id: r.position for r in b.results}
+    pct = {f.id: (min(1.0, pos[f.id] / f.arrived) if pos.get(f.id) and f.arrived else 1.0) for f in flights}
+    return consistency(pct, ids)
 
 
 def score_bird(b: Bird, ctx: Context, sibling_longs: list[float] | None = None):

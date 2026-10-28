@@ -75,6 +75,15 @@ def save(s: Session, prefs: dict) -> dict:
     merged.update(prefs)
     if merged["max_bid"] is None or int(merged["max_bid"]) < 0:
         raise ValueError("max_bid must be a positive amount in rand")
+    from .tier_a import CORE, CORE_MIN_SHARE
+
+    w = merged.get("weights") or {}
+    total = sum(float(v) for v in w.values()) or 1.0
+    core = sum(float(w.get(k, 0)) for k in CORE)
+    if core / total < CORE_MIN_SHARE:
+        raise ValueError(
+            f"Racing weights: long + hard + consistency must be at least {int(CORE_MIN_SHARE * 100)}% of the total "
+            f"(now {round(100 * core / total)}%) — the bird's own long/hard-race results always lead.")
     row = s.get(Preference, "user") or Preference(key="user")
     row.value = merged
     s.add(row)

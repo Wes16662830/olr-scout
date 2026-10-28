@@ -53,13 +53,47 @@ def test_family_key_and_shrinkage():
 
 def test_bid_score_weights_and_missing_components():
     full = bid_score(0.1, 0.8, 0.2, True, 0.2, [0.3], hard_score=0.25, arrival_rate=0.9, speed_pct=0.1)
-    w = {"long": 40, "consistency": 10, "final": 10, "family": 15, "sibling": 5, "hard": 10, "reliability": 5, "speed": 5}
-    parts = {"long": 0.9, "consistency": 0.8, "final": 0.8, "family": 1.0, "sibling": 0.7, "hard": 0.75,
+    w = {"long": 40, "hard": 15, "consistency": 10, "final": 10, "family": 10, "sibling": 5, "reliability": 5, "speed": 5}
+    parts = {"long": 0.9, "hard": 0.75, "consistency": 0.8, "final": 0.8, "family": 1.0, "sibling": 0.7,
              "reliability": 0.9, "speed": 0.9}
     assert full.score == pytest.approx(round(100 * sum(w[k] * parts[k] for k in w) / 100, 1))
     partial = bid_score(0.1, 0.8, None, False, None, None)
     assert set(partial.missing) == {"final", "family", "sibling", "hard", "reliability", "speed"}
     assert partial.score == pytest.approx(round(100 * (40 * 0.9 + 10 * 0.8) / 50, 1))
+
+
+def test_own_long_hard_consistency_always_lead():
+    from olr_scout.scoring.tier_a import CORE, CORE_MIN_SHARE
+
+    cases = [
+        bid_score(0.5, 0.5, None, False, 0.2, [0.1]),  # no hard-race data, no final: family+siblings would grow
+        bid_score(0.5, 0.5, 0.5, True, 0.2, [0.1], weights={"family": 300, "sibling": 100}),  # extreme weights
+        bid_score(0.5, 0.5, 0.5, True, 0.2, [0.1], hard_score=0.5, arrival_rate=1, speed_pct=0),
+    ]
+    for c in cases:
+        core = sum(v for k, v in c.weights_used.items() if k in CORE)
+        others = {k: v for k, v in c.weights_used.items() if k not in CORE}
+        assert core >= CORE_MIN_SHARE - 1e-9
+        assert c.weights_used["long"] > max(others.values())  # long-race placing is the single biggest part
+        assert sum(c.weights_used.values()) == pytest.approx(1.0)
+
+
+def test_settings_refuse_weights_that_break_the_rule(session):
+    from olr_scout.scoring import preferences
+
+    p = preferences.load(session)
+    p["weights"] = {**p["weights"], "family": 200}
+    with pytest.raises(ValueError, match="long \\+ hard \\+ consistency"):
+        preferences.save(session, p)
+
+
+def test_consistency_counts_long_and_hard_races_only():
+    # Seven races; the bird wins the two short easy ones and is bottom half in the 5 long/hard ones.
+    flights = [FlightIn(i, d, arrived=a, basketed=100, race_no=i)
+               for i, (d, a) in enumerate([(50, 99), (60, 98), (250, 45), (300, 40), (400, 35), (500, 30), (600, 25)], 1)]
+    res = {1: {"X": 1}, 2: {"X": 1}, 3: {"X": 30}, 4: {"X": 30}, 5: {"X": 30}, 6: {"X": 25}, 7: {"X": 20}}
+    m = season_metrics(flights, res)["X"]
+    assert m.consistency == 0.0  # short-race wins no longer count
 
 
 def test_hard_races_survival_and_speed():

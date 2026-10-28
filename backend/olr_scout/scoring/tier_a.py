@@ -23,8 +23,13 @@ LONG_RACES = 5
 
 # Racing score weights (editable in Settings). hard / reliability / speed were added
 # after the brief: placing in high-loss races, arriving at all, and margin to the winner.
-DEFAULT_WEIGHTS = {"long": 40.0, "consistency": 10.0, "final": 10.0, "family": 15.0, "sibling": 5.0,
-                   "hard": 10.0, "reliability": 5.0, "speed": 5.0}
+DEFAULT_WEIGHTS = {"long": 40.0, "hard": 15.0, "consistency": 10.0, "final": 10.0, "family": 10.0, "sibling": 5.0,
+                   "reliability": 5.0, "speed": 5.0}
+# The bird's own results in the long and hard races, and its consistency across them,
+# always carry at least this share of the racing score — whatever data is missing and
+# whatever weights are set.
+CORE = ("long", "hard", "consistency")
+CORE_MIN_SHARE = 0.60
 HARD_RACES = 3
 # Shrunk family ace rate that earns the full family component (4× the field rate).
 FAMILY_CEILING = 0.20
@@ -103,6 +108,15 @@ def long_flight_ids(flights: list[FlightIn], n: int = LONG_RACES) -> list[int]:
     return [f.id for f in races[:n]]
 
 
+def consistency(percentiles: dict[int, float], race_ids: set[int]) -> float:
+    """Share of the season's long and hard races in which the bird finished in the top
+    half of arrivals (a missed race counts as not). All races if none are identified."""
+    ids = [i for i in race_ids if i in percentiles] or list(percentiles)
+    if not ids:
+        return 0.0
+    return sum(1 for i in ids if percentiles[i] <= 0.5) / len(ids)
+
+
 def hard_flight_ids(flights: list[FlightIn], n: int = HARD_RACES) -> list[int]:
     """The season's highest-loss races (1 - arrived/basketed). Needs basketing counts."""
     rated = [(1 - f.arrived / f.basketed, f.id) for f in flights
@@ -134,8 +148,8 @@ def season_metrics(
     # registered count (from the teams list) still sets the field size.
     n_reg = max(len(birds), registered_count or 0)
     long_ids = set(long_flight_ids(races))
-    finals = [f for f in races if f.is_final]
     hard_ids = set(hard_flight_ids(races))
+    finals = [f for f in races if f.is_final]
     speeds = speeds or {}
     winner_speed = {fid: max(v.values()) for fid, v in speeds.items() if v}
     out: dict[str, BirdMetrics] = {}
@@ -155,7 +169,7 @@ def season_metrics(
             m.all_score = sum(m.percentiles.values()) / len(races)
             longs = [m.percentiles[i] for i in long_ids] or list(m.percentiles.values())
             m.long_score = sum(longs) / len(longs)
-            m.consistency = sum(1 for p in m.percentiles.values() if p <= 0.5) / len(races)
+            m.consistency = consistency(m.percentiles, long_ids | hard_ids)
         for f in finals:
             if m.positions.get(f.id) is not None:
                 m.final_position = m.positions[f.id]
@@ -274,6 +288,16 @@ class BidScore:
     missing: list[str]
 
 
+def enforce_core_share(used: dict[str, float], minimum: float = CORE_MIN_SHARE) -> dict[str, float]:
+    """Scale shares so the bird's own long/hard/consistency results hold at least
+    ``minimum`` of the total (other components share the rest in proportion)."""
+    core = sum(v for k, v in used.items() if k in CORE)
+    other = sum(v for k, v in used.items() if k not in CORE)
+    if core <= 0 or core >= minimum or other <= 0:
+        return used
+    return {k: (v * minimum / core if k in CORE else v * (1 - minimum) / other) for k, v in used.items()}
+
+
 def bid_score(
     long_score: float,
     consistency: float,
@@ -314,5 +338,6 @@ def bid_score(
             comps[key] = value
     total_w = sum(w.get(k, 0.0) for k in comps)
     used = {k: w.get(k, 0.0) / total_w for k in comps} if total_w else {}
+    used = enforce_core_share(used)
     score = 100.0 * sum(comps[k] * used[k] for k in comps)
     return BidScore(round(score, 1), {k: round(v, 4) for k, v in comps.items()}, used, missing)

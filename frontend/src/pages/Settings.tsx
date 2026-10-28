@@ -106,6 +106,9 @@ export default function Settings() {
           <label key={k}>{k} <input type="number" value={v} onChange={(e) => setP({ ...p, breeding_weights: { ...p.breeding_weights, [k]: Number(e.target.value) } })} /></label>
         ))}</div>
         <h2>Racing score weights (Tier A)</h2>
+        <p className="small muted">The bird's own results lead: <b>long + hard + consistency</b> (consistency = top-half
+          finishes across the long and hard races) always make up at least 60% of the racing score, even when other data
+          is missing. Settings that would break this are not saved.</p>
         <div className="row wrap">{Object.entries(p.weights).map(([k, v]) => (
           <label key={k}>{k} <input type="number" value={v} onChange={(e) => setP({ ...p, weights: { ...p.weights, [k]: Number(e.target.value) } })} /></label>
         ))}</div>

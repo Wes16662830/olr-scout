@@ -145,8 +145,14 @@ The card shows two numbers.
   placing in the season's 3 highest-loss races, from basketed vs arrived),
   **reliability** (share of races arrived; the card shows when a bird was last
   seen) and **speed** (mean speed as a share of each long race's winner, ranked
-  within the season). Default weights: long 40, consistency 10, final 10,
-  family 15, siblings 5, hard 10, reliability 5, speed 5.
+  within the season). Default weights: long 40, hard 15, consistency 10, final
+  10, family 10, siblings 5, reliability 5, speed 5. **The bird's own long-race
+  placing, hard-race placing and consistency (top-half finishes across the long
+  and hard races) always hold at least 60% of the racing score**: if data is
+  missing the other parts are scaled down, never these up past them, and
+  Settings refuses weights that would break it. Suggestions rank by racing
+  score by default, and the Family Builder plans on it, with breeding evidence
+  adjusting a bird by at most ±25%.
 * **Breeding** is built from offspring results, not the bird's own racing:
   **progeny 40 · siblings 25 · verified parents 15 · breeder record 10 · own
   racing 10**. Parent→offspring links come from the sire/dam rings auction
