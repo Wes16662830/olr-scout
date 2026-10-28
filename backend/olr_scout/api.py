@@ -72,8 +72,23 @@ def get_suggestions(s: Session = Depends(get_session), include_over_max: bool = 
     items = engine.suggestions(s, prefs, include_over_max)
     banners = [{"source": h.source_id, "status": h.status, "message": h.message}
                for h in s.scalars(select(SourceHealth)) if h.status in ("degraded", "error")]
+    tiers = {t: n for t, n in s.execute(select(Lot.tier, func.count()).where(Lot.status.in_(("live", "upcoming")))
+                                        .group_by(Lot.tier)).all()}
+    bh = s.get(SourceHealth, "benzing")
+    diagnosis = {
+        "result_birds": s.scalar(select(func.count()).select_from(Bird)) or 0,
+        "seasons_ingested": s.scalar(select(func.count()).select_from(Season).where(Season.ingested_at.is_not(None))) or 0,
+        "results_status": bh.status if bh else "never run",
+        "results_message": bh.message if bh else "",
+        "tiers": tiers,
+        "lots_with_ring": s.scalar(select(func.count()).select_from(Lot).where(
+            Lot.status.in_(("live", "upcoming")), Lot.ring_norm.is_not(None))) or 0,
+        "sample_lot_rings": [r for (r,) in s.execute(select(Lot.ring_raw).where(
+            Lot.status == "live", Lot.ring_raw.is_not(None)).limit(5))],
+        "sample_result_rings": [r for (r,) in s.execute(select(Bird.ring_raw).limit(5))],
+    }
     return {"items": [lot_card(x["lot"], prefs, {"value_rank": x.get("value_rank")}) for x in items],
-            "banners": banners, "max_bid": prefs["max_bid"]}
+            "banners": banners, "max_bid": prefs["max_bid"], "diagnosis": diagnosis}
 
 
 @protected.get("/lots")
