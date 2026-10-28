@@ -340,3 +340,46 @@ def suggestions(s: Session, prefs: dict | None = None, include_over_max: bool = 
     for i, x in enumerate(by_value, 1):
         x["value_rank"] = i
     return out
+
+
+REASON_TEXT = {
+    "no usable data": "no usable data (Tier D: ring not in the downloaded OLR results, no pedigree or seller text)",
+    "Tier C excluded in settings": "seller-claimed only, and Tier C is switched off in Settings",
+    "avoided family": "a bloodline you marked Avoid",
+    "own lot": "your own lots (hidden in Settings)",
+    "sex": "wrong sex for your Settings",
+    "year": "outside your year range",
+    "not an ace": "not an ace (aces-only is on)",
+    "too few races": "fewer races than your minimum",
+    "over max": "current bid above your max",
+    "closed": "closing time has passed",
+}
+
+
+def auction_overview(s: Session, prefs: dict | None = None) -> list[dict]:
+    """Every running auction with its lot count, how many are suggested, and why the
+    rest are not — so an auction never silently disappears from the filter."""
+    prefs = prefs or preferences.load(s)
+    stale = now_utc() - timedelta(minutes=5)
+    out: dict[str, dict] = {}
+    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")))):
+        key = f"{lot.source}:{lot.auction_id}"
+        a = out.setdefault(key, {"key": key, "source": lot.source, "auction_id": lot.auction_id,
+                                 "auction_name": lot.auction_name, "olr_tag": lot.olr_tag, "lots": 0,
+                                 "suggested": 0, "tiers": {}, "hidden": {}})
+        a["lots"] += 1
+        a["tiers"][lot.tier or "?"] = a["tiers"].get(lot.tier or "?", 0) + 1
+        if lot.ends_at is not None and as_aware(lot.ends_at) < stale:
+            why = "closed"
+        else:
+            ok, why = passes_filters(lot, prefs)
+            if ok:
+                limit = preferences.lot_max(lot, lot.family_tags or [], prefs)
+                price = lot.current_bid if lot.current_bid is not None else (lot.starting_bid or 0)
+                why = "over max" if price > limit else ""
+        if why:
+            text = REASON_TEXT.get(why, why)
+            a["hidden"][text] = a["hidden"].get(text, 0) + 1
+        else:
+            a["suggested"] += 1
+    return sorted(out.values(), key=lambda a: (-a["suggested"], -a["lots"]))

@@ -185,3 +185,20 @@ def test_own_lot_flag_and_leading(session, client):
     lot1 = session.scalar(select(Lot).where(Lot.source == "toppigeon", Lot.lot_no == 1,
                                             Lot.auction_name == "AfrikaPro 2026 Auction 2"))
     assert preferences.user_is_leading(lot1, preferences.load(session))
+
+
+def test_auction_with_no_suggestions_still_listed_with_reasons(session):
+    make_season(session, "AfrikaPro", 2026, {"ZA-26-1": ("Alpha Lofts", GOOD)})
+    make_lot(session, 1, auction_id="afp", auction_name="AfrikaPro Auction", ring_raw="ZA-26-1", current_bid=100)
+    make_lot(session, 2, auction_id="dino", auction_name="Dinokeng 2026", ring_raw="ZA 26 GAUT 1", current_bid=100)
+    make_lot(session, 3, auction_id="dino", auction_name="Dinokeng 2026", ring_raw="ZA 26 GAUT 2", current_bid=100,
+             description="Kittel")
+    session.flush()
+    engine.score_all(session)
+    _prefs(session, include_tier_c=False)
+    over = {a["auction_name"]: a for a in engine.auction_overview(session)}
+    dino = over["Dinokeng 2026"]
+    assert dino["lots"] == 2 and dino["suggested"] == 0
+    assert sum(dino["hidden"].values()) == 2
+    assert any("Tier D" in k for k in dino["hidden"]) and any("Tier C is switched off" in k for k in dino["hidden"])
+    assert over["AfrikaPro Auction"]["suggested"] == 1

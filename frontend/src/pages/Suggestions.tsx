@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import AuctionFilter, { useAuctionFilter } from "../components/AuctionFilter";
+import AuctionFilter, { AuctionOverview, HiddenExplainer, useAuctionFilter } from "../components/AuctionFilter";
 import LotCard from "../components/LotCard";
 import { LotCard as Lot } from "../lib/api";
 import { zar } from "../lib/format";
@@ -8,7 +8,8 @@ import { useData } from "../lib/useData";
 type Diagnosis = { result_birds: number; seasons_ingested: number; results_status: string; results_message: string;
   tiers: Record<string, number>; lots_with_ring: number; sample_lot_rings: string[]; sample_result_rings: string[];
   lots_in_results?: number; result_seasons?: string[] };
-type Resp = { items: Lot[]; banners: { source: string; status: string; message: string }[]; max_bid: number; diagnosis?: Diagnosis };
+type Resp = { items: Lot[]; banners: { source: string; status: string; message: string }[]; max_bid: number; diagnosis?: Diagnosis;
+  auctions?: AuctionOverview[] };
 
 function WhyNoScores({ d }: { d: Diagnosis }) {
   const verified = (d.tiers.A || 0) + (d.tiers.B || 0);
@@ -59,9 +60,10 @@ export default function Suggestions() {
       {data?.diagnosis && <WhyNoScores d={data.diagnosis} />}
       {error && <div className="error">{error}</div>}
       {loading && !data && <p>Loading…</p>}
-      {data && <AuctionFilter lots={data.items} selected={filter.selected} onChange={filter.setSelected} />}
+      {data && <AuctionFilter lots={data.items} selected={filter.selected} onChange={filter.setSelected} overview={data.auctions} />}
+      {data?.auctions && <HiddenExplainer overview={data.auctions} selected={filter.selected} />}
       {data && data.items.length === 0 && <p>No lots match right now. Check Sources if this looks wrong.</p>}
-      {data && data.items.length > 0 && shown.length === 0 && <p>No suggestions in the selected auctions.</p>}
+      {data && data.items.length > 0 && shown.length === 0 && <p>No suggestions in the selected auctions — the yellow box says why.</p>}
       <div className="grid">{shown.map((l) => <LotCard key={l.id} lot={l} />)}</div>
     </section>
   );

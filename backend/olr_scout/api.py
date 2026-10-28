@@ -94,7 +94,8 @@ def get_suggestions(s: Session = Depends(get_session), include_over_max: bool = 
             .where(Season.ingested_at.is_not(None)).order_by(Season.year.desc()))],
     }
     return {"items": [lot_card(x["lot"], prefs, {"value_rank": x.get("value_rank")}) for x in items],
-            "banners": banners, "max_bid": prefs["max_bid"], "diagnosis": diagnosis}
+            "banners": banners, "max_bid": prefs["max_bid"], "diagnosis": diagnosis,
+            "auctions": engine.auction_overview(s, prefs)}
 
 
 @protected.get("/lots")
