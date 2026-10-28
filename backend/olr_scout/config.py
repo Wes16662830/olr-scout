@@ -14,6 +14,25 @@ USER_AGENT = (
 )
 
 
+def _load_env_file() -> None:
+    """Read KEY=value lines from olr-scout/.env (or backend/.env) into the
+    environment, without overriding variables that are already set."""
+    here = Path(__file__).resolve().parent
+    for path in (here.parents[1] / ".env", here.parent / ".env"):
+        if not path.is_file():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+if os.environ.get("OLR_SCOUT_SKIP_ENV_FILE") != "1":
+    _load_env_file()
+
+
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
 

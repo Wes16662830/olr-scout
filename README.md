@@ -42,6 +42,15 @@ Rebuild the snapshot after scoring changes: `cd backend && python scripts/build_
 
 ## Run locally
 
+Easiest: copy `.env.example` to `.env`, set `OLR_SCOUT_PASSWORD`, then double-click
+`start-windows.bat` (Windows) or run `./start-mac-linux.sh` (Mac/Linux). The first run
+installs everything; after that it starts in seconds. Open http://localhost:8000.
+
+The app reads settings from `.env` in this folder (or `backend/.env`); real
+environment variables win over the file.
+
+Manual steps, if you prefer:
+
 ```bash
 cp .env.example .env            # set OLR_SCOUT_PASSWORD at least
 
