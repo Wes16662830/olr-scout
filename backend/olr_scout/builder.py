@@ -46,6 +46,7 @@ class Candidate:
     gen2: set = field(default_factory=set)
     label: str = ""
     url: str | None = None
+    breeding: float | None = None
 
 
 def family_records(s: Session, keys: list[str], olrs: set[str] | None = None) -> list[dict]:
@@ -168,12 +169,16 @@ def build_plan(s: Session, goal: dict, save: bool = True) -> dict:
                 continue
         if not fams:
             continue
-        strength = max(fam_rate.get(f, FIELD_RATE) for f in fams) / FIELD_RATE * TIER_FACTOR[lot.tier]
+        family_strength = max(fam_rate.get(f, FIELD_RATE) for f in fams) / FIELD_RATE * TIER_FACTOR[lot.tier]
+        # Prefer real breeding evidence (offspring, siblings, verified parents) when the lot has it:
+        # a breeding score of 50 ranks like a family at twice the field ace rate.
+        strength = (lot.breeding_score / 25.0) if lot.breeding_score is not None else family_strength
         price = lot.current_bid if lot.current_bid is not None else (lot.starting_bid or 0)
         limit = preferences.lot_max(lot, lot.family_tags or [], prefs)
         next_bid = price + (MIN_INCREMENT if lot.current_bid else 0)
         c = Candidate("lot", lot.id, lot.ring_raw, lot.sex, fams, strength, lot.tier, price, limit, gen1, gen2,
                       f"{lot.auction_name} lot {lot.lot_no or '?'} {lot.ring_raw or ''}".strip(), lot.url)
+        c.breeding = lot.breeding_score
         if next_bid > limit:
             excluded.append({"lot_id": lot.id, "reason": f"price already at/over your max (R{limit:,})"})
             continue
@@ -239,7 +244,8 @@ def build_plan(s: Session, goal: dict, save: bool = True) -> dict:
                      "target_each": per_family, "fill": fill})
 
     items = [{"lot_id": c.id, "label": c.label, "sex": c.sex, "tier": c.tier, "families": c.families,
-              "strength": round(c.strength, 3), "current": c.price, "max_bid": c.max_bid, "url": c.url}
+              "strength": round(c.strength, 3), "breeding": c.breeding, "current": c.price, "max_bid": c.max_bid,
+              "url": c.url, "basis": "breeding evidence" if c.breeding is not None else "family record"}
              for c in chosen]
     assert not budget or total <= budget
     result = {"goal": goal, "items": items, "total_max": total, "budget": budget,

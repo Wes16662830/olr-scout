@@ -106,3 +106,10 @@ tr.mine-won td { background: rgba(22, 101, 52, .12); }
 tr.mine-bid td { background: rgba(180, 83, 9, .08); }
 .last-bid { font-size: 13px; margin-top: 2px; }
 .last-bid.you { color: var(--good); }
+.score small { font-size: 11px; font-weight: 600; color: var(--muted); }
+.score.breed { color: #7c3aed; }
+.score.breed.none { color: var(--muted); font-weight: 600; }
+.breeding { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 6px; }
+.conf-high { color: var(--good); border-color: var(--good); }
+.conf-medium { color: var(--b); border-color: var(--b); }
+.conf-low { color: var(--warn); border-color: var(--warn); }

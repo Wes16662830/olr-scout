@@ -124,7 +124,8 @@ def default_web() -> FakeWeb:
           jsn({"stopped_flights": [{"id": f["id"], "name": f["name"], "distance": f["distance"], "season_id": 2873,
                                     "flight_type": f.get("type", "race"),
                                     "release_time": f"2026-07-{10 + i:02d} 08:30:00",
-                                    "trigger_arrivals_counter": len(synthetic.results()[f["id"]]) or None}
+                                    "trigger_arrivals_counter": len(synthetic.results()[f["id"]]) or None,
+                                    "trigger_basketings_counter": 40 if f.get("type") != "training" else None}
                                    for i, f in enumerate(synthetic.FLIGHTS)],
                "running_flights": []}))
     res = synthetic.results()

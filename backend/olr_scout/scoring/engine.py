@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from ..models import AncestorClaim, Bird, FamilyStat, Flight, Lot
 from ..rings import RingIndex, ResultRing, normalise, parse_ring
-from . import pedigree, preferences, seller
+from . import pedigree, preferences, progeny, seller
 from ..util.timeutil import as_aware, now_utc
 from .tier_a import bid_score
 
@@ -35,6 +35,7 @@ class Context:
     birds: dict[int, Bird]
     birds_by_ring: dict[str, list[Bird]]
     best_pct: dict[int, float | None]
+    progeny: "progeny.ProgenyIndex | None" = None
 
 
 def build_context(s: Session, prefs: dict | None = None) -> Context:
@@ -182,6 +183,9 @@ def score_bird(b: Bird, ctx: Context, sibling_longs: list[float] | None = None):
         sibling_longs,
         ctx.prefs.get("weights"),
         ctx.prefs.get("family_ceiling", 0.20),
+        hard_score=b.hard_score,
+        arrival_rate=b.arrival_rate,
+        speed_pct=b.speed_pct,
     )
 
 
@@ -203,12 +207,13 @@ def sibling_longs(lot: Lot, siblings: dict[str, list[Lot]], ctx: Context) -> lis
     return out
 
 
-def score_lot(s: Session, lot: Lot, ctx: Context, siblings: dict[str, list[Lot]]) -> None:
+def score_lot(s: Session, lot: Lot, ctx: Context, siblings: dict[str, list[Lot]], claims=None) -> None:
     prefs = ctx.prefs
     tags = preferences.family_tags(lot, prefs)
     lot.family_tags = tags
     lot.own_lot = preferences.is_own_lot(lot, prefs)
-    claims = refresh_claims(s, lot, ctx)
+    if claims is None:
+        claims = refresh_claims(s, lot, ctx)
     verified = [c for c in claims if c.status in ("verified", "mismatch") and c.bird_id]
     lot.claim_mismatch = any(c.status == "mismatch" for c in claims)
     sstat = seller.lookup(s, lot.seller)
@@ -266,7 +271,40 @@ def score_lot(s: Session, lot: Lot, ctx: Context, siblings: dict[str, list[Lot]]
     else:
         lot.tier, lot.score = "D", None
         detail.update({"label": "no usable data"})
+    detail["breeding"] = _breeding(lot, bird, claims, verified, sstat, ctx)
+    lot.breeding_score = detail["breeding"]["score"]
     lot.score_detail = detail
+
+
+def _rec(r) -> dict | None:
+    if r is None:
+        return None
+    return {"n": r.n, "aces": r.aces, "ace_rate": round(r.ace_rate, 4), "mean_long": round(r.mean_long, 4),
+            "birds": r.birds}
+
+
+def _breeding(lot: Lot, bird: Bird | None, claims, verified, sstat, ctx: Context) -> dict:
+    """Breeding score from offspring, siblings, verified parents, breeder record, own racing."""
+    idx = ctx.progeny
+    if idx is None:
+        return {"score": None, "confidence": "none", "missing": list(progeny.LAYER_WEIGHTS)}
+    own_ring = bird.ring_norm if bird is not None else lot.ring_norm
+    parents = {c.ring_norm for c in claims
+               if c.relation in progeny.PARENT_RELATIONS and c.status != "rejected" and c.ring_norm}
+    prog = idx.progeny(own_ring)
+    sibs = idx.siblings(own_ring, parents)
+    parent_scores = [score_bird(ctx.birds[c.bird_id], ctx).score for c in verified
+                     if c.relation in progeny.PARENT_RELATIONS and c.bird_id in ctx.birds]
+    breeder_rate = None
+    if bird is not None and bird.family_key in ctx.family_rate:
+        breeder_rate = ctx.family_rate[bird.family_key][0]
+    elif sstat is not None and sstat.sold_raced:
+        breeder_rate = sstat.ace_rate_shrunk
+    own = lot.score if lot.tier == "A" else None
+    out = progeny.breeding_score(prog, sibs, parent_scores, breeder_rate, own, ctx.prefs.get("breeding_weights"))
+    out.update({"progeny": _rec(prog), "siblings": _rec(sibs), "parents_verified": len(parent_scores),
+                "parents_named": len(parents)})
+    return out
 
 
 def rank_score(lot: Lot, prefs: dict) -> float | None:
@@ -300,8 +338,12 @@ def _score_all(s: Session, lots: list[Lot] | None = None) -> int:
         for key in (_norm_parent(lot.sire), _norm_parent(lot.dam)):
             if key:
                 siblings[key].append(lot)
+    # Read every lot's parent claims first, so the progeny index sees this run's links.
+    claims_of = {lot.id: refresh_claims(s, lot, ctx) for lot in lots}
+    s.flush()
+    ctx.progeny = progeny.ProgenyIndex(s)
     for lot in lots:
-        score_lot(s, lot, ctx, siblings)
+        score_lot(s, lot, ctx, siblings, claims_of[lot.id])
     s.flush()
     return len(lots)
 
@@ -350,7 +392,12 @@ def suggestions(s: Session, prefs: dict | None = None, include_over_max: bool = 
         out.append({"lot": lot, "max": limit, "price": price, "rank_score": rs,
                     "near_max": price >= limit - int(prefs.get("near_max_buffer", 0)),
                     "value": round(rs / max(price, 100) * 1000, 2) if rs is not None else None})
-    out.sort(key=lambda x: (TIER_ORDER.get(x["lot"].tier, 9), -(x["rank_score"] or 0), x["price"]))
+    if prefs.get("rank_by") == "breeding":
+        # Breeding evidence first (highest breeding score), then the usual order for the rest.
+        out.sort(key=lambda x: (x["lot"].breeding_score is None, -(x["lot"].breeding_score or 0),
+                                TIER_ORDER.get(x["lot"].tier, 9), -(x["rank_score"] or 0), x["price"]))
+    else:
+        out.sort(key=lambda x: (TIER_ORDER.get(x["lot"].tier, 9), -(x["rank_score"] or 0), x["price"]))
     # Value rank within budget (higher score per R1,000 = better value).
     by_value = sorted([x for x in out if x["value"] is not None], key=lambda x: -x["value"])
     for i, x in enumerate(by_value, 1):

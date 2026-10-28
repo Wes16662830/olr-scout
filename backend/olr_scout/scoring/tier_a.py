@@ -21,7 +21,11 @@ FIELD_RATE = 0.05
 PRIOR_N = 20
 LONG_RACES = 5
 
-DEFAULT_WEIGHTS = {"long": 50.0, "consistency": 15.0, "final": 10.0, "family": 20.0, "sibling": 5.0}
+# Racing score weights (editable in Settings). hard / reliability / speed were added
+# after the brief: placing in high-loss races, arriving at all, and margin to the winner.
+DEFAULT_WEIGHTS = {"long": 40.0, "consistency": 10.0, "final": 10.0, "family": 15.0, "sibling": 5.0,
+                   "hard": 10.0, "reliability": 5.0, "speed": 5.0}
+HARD_RACES = 3
 # Shrunk family ace rate that earns the full family component (4× the field rate).
 FAMILY_CEILING = 0.20
 
@@ -70,6 +74,8 @@ class FlightIn:
     is_training: bool = False
     is_final: bool = False
     name: str = ""
+    basketed: int | None = None
+    race_no: int | None = None
 
 
 @dataclass
@@ -83,6 +89,12 @@ class BirdMetrics:
     final_position: int | None = None
     final_percentile: float | None = None
     is_ace: bool = False
+    # Robustness measures
+    hard_score: float | None = None  # mean percentile in the season's highest-loss races (1.0 if missing)
+    arrival_rate: float = 0.0  # share of the season's races the bird arrived in
+    lost_after: str | None = None  # "R6" if it arrived up to race 6 and never again; "never" if never arrived
+    speed_index: float | None = None  # mean speed / winner's speed over long races it arrived in
+    speed_pct: float | None = None  # rank of speed_index among the season's birds (0 = best)
 
 
 def long_flight_ids(flights: list[FlightIn], n: int = LONG_RACES) -> list[int]:
@@ -91,12 +103,23 @@ def long_flight_ids(flights: list[FlightIn], n: int = LONG_RACES) -> list[int]:
     return [f.id for f in races[:n]]
 
 
+def hard_flight_ids(flights: list[FlightIn], n: int = HARD_RACES) -> list[int]:
+    """The season's highest-loss races (1 - arrived/basketed). Needs basketing counts."""
+    rated = [(1 - f.arrived / f.basketed, f.id) for f in flights
+             if not f.is_training and f.basketed and f.arrived is not None and f.basketed >= f.arrived]
+    if len(rated) < n:
+        return []
+    rated.sort(reverse=True)
+    return [fid for _, fid in rated[:n]]
+
+
 def season_metrics(
     flights: list[FlightIn],
     results: dict[int, dict[str, int]],
     registered: set[str] | None = None,
     field_rate: float = FIELD_RATE,
     registered_count: int | None = None,
+    speeds: dict[int, dict[str, float]] | None = None,
 ) -> dict[str, BirdMetrics]:
     """Compute per-bird metrics for one OLR season.
 
@@ -112,6 +135,9 @@ def season_metrics(
     n_reg = max(len(birds), registered_count or 0)
     long_ids = set(long_flight_ids(races))
     finals = [f for f in races if f.is_final]
+    hard_ids = set(hard_flight_ids(races))
+    speeds = speeds or {}
+    winner_speed = {fid: max(v.values()) for fid, v in speeds.items() if v}
     out: dict[str, BirdMetrics] = {}
     for ring in birds:
         m = BirdMetrics(ring)
@@ -134,7 +160,24 @@ def season_metrics(
             if m.positions.get(f.id) is not None:
                 m.final_position = m.positions[f.id]
                 m.final_percentile = m.percentiles[f.id]
+        if races:
+            arrived_in = [i for i, f in enumerate(races) if m.positions.get(f.id) is not None]
+            m.arrival_rate = len(arrived_in) / len(races)
+            if not arrived_in:
+                m.lost_after = "never"
+            elif arrived_in[-1] < len(races) - 1:
+                last = races[arrived_in[-1]]
+                m.lost_after = f"R{last.race_no}" if getattr(last, "race_no", None) else last.name or f"race {arrived_in[-1] + 1}"
+        if hard_ids:
+            m.hard_score = sum(m.percentiles[i] for i in hard_ids) / len(hard_ids)
+        ratios = [speeds[i][ring] / winner_speed[i] for i in long_ids
+                  if i in winner_speed and ring in speeds.get(i, {}) and winner_speed[i] > 0]
+        if ratios:
+            m.speed_index = sum(ratios) / len(ratios)
         out[ring] = m
+    ranked = sorted((b for b in out.values() if b.speed_index is not None), key=lambda b: -b.speed_index)
+    for i, b in enumerate(ranked):
+        b.speed_pct = i / max(1, len(ranked) - 1) if len(ranked) > 1 else 0.0
     # Aces: top 5% of registered birds by long score.
     n_aces = max(1, math.ceil(field_rate * n_reg)) if n_reg else 0
     ranked = sorted(out.values(), key=lambda b: (b.long_score, b.all_score, b.ring_norm))
@@ -240,6 +283,9 @@ def bid_score(
     sibling_long_scores: list[float] | None,
     weights: dict[str, float] | None = None,
     family_ceiling: float = FAMILY_CEILING,
+    hard_score: float | None = None,
+    arrival_rate: float | None = None,
+    speed_pct: float | None = None,
 ) -> BidScore:
     """0–100. Components without data are left out and the remaining weights
     renormalised — nothing is filled in with a guess."""
@@ -259,7 +305,14 @@ def bid_score(
         comps["sibling"] = 1.0 - sum(sibling_long_scores) / len(sibling_long_scores)
     else:
         missing.append("sibling")
-    total_w = sum(w[k] for k in comps)
-    used = {k: w[k] / total_w for k in comps} if total_w else {}
+    for key, value in (("hard", None if hard_score is None else 1.0 - hard_score),
+                       ("reliability", arrival_rate),
+                       ("speed", None if speed_pct is None else 1.0 - speed_pct)):
+        if value is None:
+            missing.append(key)
+        else:
+            comps[key] = value
+    total_w = sum(w.get(k, 0.0) for k in comps)
+    used = {k: w.get(k, 0.0) / total_w for k in comps} if total_w else {}
     score = 100.0 * sum(comps[k] * used[k] for k in comps)
     return BidScore(round(score, 1), {k: round(v, 4) for k, v in comps.items()}, used, missing)

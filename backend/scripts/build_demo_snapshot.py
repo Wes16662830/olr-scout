@@ -42,7 +42,7 @@ OUT = ROOT.parent / "frontend" / "src" / "demo" / "snapshot.json"
 
 DEMO_LOTS = [  # (sex, current bid, seller text) — rings point at birds in the synthetic season
     ("cock", 1500, 'Kittel. Sire: ZA 2023 PORT 555 "Blue Kittel". Dam: ZA-26-100009 ace hen.'),
-    ("hen", 1300, "Janssen"),
+    ("hen", 1300, "Janssen. Sire: ZA-26-100030 proven breeder."),
     ("cock", 2500, "Kittel x Janssen"),
     ("hen", 4200, "Thoné hen"),
     ("cock", 1800, ""),
@@ -90,6 +90,7 @@ def seed(s) -> None:
         lot = make_lot(s, 200 + i, source="demo", auction_id="demo-closed", auction_name="DEMO AfrikaPro 2026 Auction 1",
                        ring_raw=f"ZA-26-{100010 + i}", sex="cock" if i % 2 else "hen", seller="Demo Lofts",
                        olr_tag="AfrikaPro", olr_year=2026, title=f"Lot {200 + i}", status="closed",
+                       description="Sire: ZA-26-100030." if i < 6 else None,
                        current_bid=price, bid_count=0 if price is None else 3 + i, reserve_met=False if i == 3 else True,
                        leading_bidder=buyers[i], ends_at=now_utc() - timedelta(days=2, minutes=-2 * i))
         lot.final_read = True

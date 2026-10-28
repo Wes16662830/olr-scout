@@ -111,7 +111,8 @@ class Lot(Base):
     override_none: Mapped[bool] = mapped_column(Boolean, default=False)  # "this lot has no results"
     # Scoring (cached; recomputed after each refresh)
     tier: Mapped[str | None] = mapped_column(String(1))
-    score: Mapped[float | None] = mapped_column(Float)
+    score: Mapped[float | None] = mapped_column(Float)  # racing score
+    breeding_score: Mapped[float | None] = mapped_column(Float)  # only with progeny/sibling/parent evidence
     score_detail: Mapped[dict] = mapped_column(JSON, default=dict)
     family_tags: Mapped[list] = mapped_column(JSON, default=list)
     claim_mismatch: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -163,6 +164,7 @@ class Season(Base):
     registered: Mapped[int | None] = mapped_column(Integer)
     teams: Mapped[int | None] = mapped_column(Integer)
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    data_version: Mapped[int | None] = mapped_column(Integer)  # re-download when lower than ingest.DATA_VERSION
     # Last time the season was looked at and had no races yet (so it is not re-asked every refresh).
     no_races_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     olr = relationship("Olr", back_populates="seasons")
@@ -203,6 +205,11 @@ class Bird(Base):
     long_score: Mapped[float | None] = mapped_column(Float)
     all_score: Mapped[float | None] = mapped_column(Float)
     final_position: Mapped[int | None] = mapped_column(Integer)
+    hard_score: Mapped[float | None] = mapped_column(Float)
+    arrival_rate: Mapped[float | None] = mapped_column(Float)
+    lost_after: Mapped[str | None] = mapped_column(String(40))
+    speed_index: Mapped[float | None] = mapped_column(Float)
+    speed_pct: Mapped[float | None] = mapped_column(Float)
     results = relationship("BirdResult", back_populates="bird", cascade="all, delete-orphan")
     season = relationship("Season")
 

@@ -10,6 +10,7 @@ type Prefs = {
   own: { team_names: string[]; usernames: string[]; exclude_own: boolean };
   weights: Record<string, number>; family_ceiling: number; mismatch_threshold: number; tier_c_cap: number;
   results_seasons: number;
+  rank_by: string; breeding_weights: Record<string, number>;
 };
 type Olr = { id: number; name: string; loft_id: number | null; aliases: string[]; enabled: boolean; auto_discovered: boolean;
   seasons: { id: number; year: number; registered: number | null; ingested_at: string | null; flights: number }[] };
@@ -90,7 +91,21 @@ export default function Settings() {
       </div>
 
       <div className="panel">
-        <h2>Score weights (Tier A)</h2>
+        <h2>Ranking</h2>
+        <div className="row wrap">
+          <label>Order suggestions by
+            <select value={p.rank_by} onChange={(e) => setP({ ...p, rank_by: e.target.value })}>
+              <option value="racing">Racing score (how the bird raced)</option>
+              <option value="breeding">Breeding score (offspring, siblings, parents)</option>
+            </select>
+          </label>
+        </div>
+        <h3>Breeding score weights</h3>
+        <p className="small muted">Only used when a lot has offspring, sibling or verified-parent evidence.</p>
+        <div className="row wrap">{Object.entries(p.breeding_weights || {}).map(([k, v]) => (
+          <label key={k}>{k} <input type="number" value={v} onChange={(e) => setP({ ...p, breeding_weights: { ...p.breeding_weights, [k]: Number(e.target.value) } })} /></label>
+        ))}</div>
+        <h2>Racing score weights (Tier A)</h2>
         <div className="row wrap">{Object.entries(p.weights).map(([k, v]) => (
           <label key={k}>{k} <input type="number" value={v} onChange={(e) => setP({ ...p, weights: { ...p.weights, [k]: Number(e.target.value) } })} /></label>
         ))}</div>

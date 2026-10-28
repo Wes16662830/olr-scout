@@ -52,12 +52,28 @@ def test_family_key_and_shrinkage():
 
 
 def test_bid_score_weights_and_missing_components():
-    full = bid_score(0.1, 0.8, 0.2, True, 0.2, [0.3])
-    expected = 100 * (0.5 * 0.9 + 0.15 * 0.8 + 0.10 * 0.8 + 0.20 * 1.0 + 0.05 * 0.7)
-    assert full.score == pytest.approx(round(expected, 1))
+    full = bid_score(0.1, 0.8, 0.2, True, 0.2, [0.3], hard_score=0.25, arrival_rate=0.9, speed_pct=0.1)
+    w = {"long": 40, "consistency": 10, "final": 10, "family": 15, "sibling": 5, "hard": 10, "reliability": 5, "speed": 5}
+    parts = {"long": 0.9, "consistency": 0.8, "final": 0.8, "family": 1.0, "sibling": 0.7, "hard": 0.75,
+             "reliability": 0.9, "speed": 0.9}
+    assert full.score == pytest.approx(round(100 * sum(w[k] * parts[k] for k in w) / 100, 1))
     partial = bid_score(0.1, 0.8, None, False, None, None)
-    assert set(partial.missing) == {"final", "family", "sibling"}
-    assert partial.score == pytest.approx(round(100 * (50 * 0.9 + 15 * 0.8) / 65, 1))
+    assert set(partial.missing) == {"final", "family", "sibling", "hard", "reliability", "speed"}
+    assert partial.score == pytest.approx(round(100 * (40 * 0.9 + 10 * 0.8) / 50, 1))
+
+
+def test_hard_races_survival_and_speed():
+    flights = [FlightIn(1, 100, arrived=90, basketed=100, race_no=1), FlightIn(2, 200, arrived=50, basketed=100, race_no=2),
+               FlightIn(3, 300, arrived=40, basketed=100, race_no=3), FlightIn(4, 400, arrived=20, basketed=100, race_no=4)]
+    res = {1: {"A": 1, "B": 2}, 2: {"A": 2, "B": 1}, 3: {"A": 1}, 4: {}}
+    speeds = {1: {"A": 1500.0, "B": 1490.0}, 2: {"A": 1300.0, "B": 1400.0}, 3: {"A": 1200.0}}
+    m = season_metrics(flights, res, {"A", "B", "C"}, speeds=speeds)
+    # Hardest three: race 4 (80% lost), 3 (60%), 2 (50%).
+    assert m["A"].hard_score == pytest.approx((2 / 50 + 1 / 40 + 1.0) / 3)
+    assert m["A"].arrival_rate == 0.75 and m["A"].lost_after == "R3"
+    assert m["B"].lost_after == "R2" and m["C"].lost_after == "never"
+    assert m["B"].speed_index > m["A"].speed_index  # B won race 2 by a margin, A only race 1/3
+    assert m["B"].speed_pct == 0.0 and m["C"].speed_index is None
 
 
 def test_spearman():

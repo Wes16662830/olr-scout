@@ -52,6 +52,9 @@ DEFAULTS: dict = {
     # How many of each OLR's newest seasons (with races) to download. Older seasons
     # verify parents (Tier B), so raising this improves pedigree checks.
     "results_seasons": 2,
+    # Suggestions order: "racing" (tier, then racing score) or "breeding" (breeding score first).
+    "rank_by": "racing",
+    "breeding_weights": {"progeny": 40.0, "siblings": 25.0, "parents": 15.0, "breeder": 10.0, "own": 10.0},
 }
 
 

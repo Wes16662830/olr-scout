@@ -94,7 +94,8 @@ def get_suggestions(s: Session = Depends(get_session), include_over_max: bool = 
             .where(Season.ingested_at.is_not(None)).order_by(Season.year.desc()))],
     }
     return {"items": [lot_card(x["lot"], prefs, {"value_rank": x.get("value_rank")}) for x in items],
-            "banners": banners, "max_bid": prefs["max_bid"], "diagnosis": diagnosis,
+            "banners": banners, "max_bid": prefs["max_bid"], "rank_by": prefs.get("rank_by", "racing"),
+            "diagnosis": diagnosis,
             "auctions": engine.auction_overview(s, prefs)}
 
 
@@ -304,7 +305,27 @@ def families(s: Session = Depends(get_session), olr: str | None = None, min_entr
         out.append({"family": f.family_key, "entries": f.entries, "aces": f.aces, "finalists": f.finalists,
                     "ace_rate": round(f.ace_rate_shrunk, 4), "small_sample": f.entries < 20,
                     "seasons": sorted(by_fam.get(f.family_key, []), key=lambda x: x["year"] or 0)})
-    return {"families": out, "persistence": persistence(by_season), "leaders": leaders(s)}
+    return {"families": out, "persistence": persistence(by_season), "leaders": leaders(s),
+            "top_parents": top_parents(s)}
+
+
+def top_parents(s: Session, limit: int = 30) -> list[dict]:
+    """Sires/dams with at least 2 offspring found in OLR results (from auction listings)."""
+    from .scoring.progeny import ProgenyIndex
+
+    idx = ProgenyIndex(s)
+    rows = []
+    for parent, kids in idx.offspring_of.items():
+        rec = idx.record(kids)
+        if rec is None or rec.n < 2:
+            continue
+        own = idx.best.get(parent)
+        rows.append({"ring": own.ring_raw if own else parent, "name": own.name if own else None,
+                     "raced": f"{own.season.olr.name} {own.season.year}" if own else None,
+                     "offspring_named": len(kids), "offspring_raced": rec.n, "aces": rec.aces,
+                     "ace_rate": round(rec.ace_rate, 4), "mean_long": round(rec.mean_long, 4),
+                     "strength": round(rec.strength() * 100, 1), "best": rec.birds[:3]})
+    return sorted(rows, key=lambda r: -r["strength"])[:limit]
 
 
 def leaders(s: Session) -> dict:

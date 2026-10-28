@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { api, BirdSummary, Lineage, LotCard as Lot } from "../lib/api";
+import { api, BirdSummary, Breeding, Lineage, LotCard as Lot } from "../lib/api";
 import { countdown, pct, useNow, when, zar } from "../lib/format";
 
 const TIER_TEXT: Record<string, string> = {
@@ -74,6 +74,36 @@ function BirdBlock({ b, seller }: { b: BirdSummary; seller: string | null }) {
         {b.final_position ? ` · final ${ordinal(b.final_position)}` : ""}
         {b.is_ace ? " · ACE" : ""}
       </div>
+      <div className="small muted">
+        {b.arrival_rate !== null && `Arrived ${Math.round(b.arrival_rate * 100)}% of races`}
+        {b.lost_after && (b.lost_after === "never" ? " · never arrived" : ` · not seen after ${b.lost_after}`)}
+        {b.hard_score !== null && ` · hardest races avg top ${pct(b.hard_score)}`}
+        {b.speed_index !== null && ` · ${(b.speed_index * 100).toFixed(1)}% of winner's speed (long races)`}
+      </div>
+    </div>
+  );
+}
+
+const CONF_TEXT: Record<string, string> = { low: "low confidence", medium: "medium confidence", high: "high confidence" };
+
+function BreedingBlock({ br }: { br: Breeding }) {
+  if (br.score === null || br.confidence === "none") {
+    return (
+      <div className="breeding small muted">
+        Breeding: no offspring, sibling or verified-parent results yet — {br.parents_named
+          ? `${br.parents_named} parent(s) named, not found in OLR results`
+          : "the listing names no parents"}. Own racing is not used as a breeding score.
+      </div>
+    );
+  }
+  const rec = (label: string, r?: { n: number; aces: number; mean_long: number } | null) =>
+    r ? `${label}: ${r.n} raced, ${r.aces} ace${r.aces === 1 ? "" : "s"}, avg long top ${pct(r.mean_long)}` : null;
+  const parts = [rec("Offspring", br.progeny), rec("Siblings", br.siblings),
+    br.parents_verified ? `${br.parents_verified} parent(s) verified` : null].filter(Boolean);
+  return (
+    <div className="breeding small">
+      <span className="label">Breeding evidence</span> <span className={`badge conf-${br.confidence}`}>{CONF_TEXT[br.confidence]}</span>
+      <div className="muted">{parts.join(" · ")}</div>
     </div>
   );
 }
@@ -130,7 +160,15 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
         <div className="card-main">
           <div className="row wrap">
             <TierBadge tier={lot.tier} />
-            {lot.score !== null && <span className="score">{lot.rank_score?.toFixed(0)}<small>/100</small></span>}
+            {lot.score !== null && (
+              <span className="score" title="Racing score: how this bird (or its verified ancestors) raced">
+                <small>Racing </small>{lot.rank_score?.toFixed(0)}
+              </span>
+            )}
+            <span className={`score breed ${lot.breeding_score == null ? "none" : ""}`}
+              title="Breeding score: offspring, siblings and verified parents in OLR results">
+              <small>Breeding </small>{lot.breeding_score == null ? "–" : lot.breeding_score.toFixed(0)}
+            </span>
             <span className={`badge match-${lot.match_confidence}`}>match: {lot.match_confidence}{lot.ring_low_confidence ? " (low)" : ""}</span>
             {lot.own_lot && <span className="badge own">your loft</span>}
             {lot.you_lead && <span className="badge lead">you lead</span>}
@@ -152,6 +190,7 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
       </div>
       {lot.bird && <BirdBlock b={lot.bird} seller={lot.seller} />}
       {lot.lineage && <Parents l={lot.lineage} />}
+      {lot.breeding && <BreedingBlock br={lot.breeding} />}
       <div className="facts">
         {lot.tier === "A" && p && (
           <span>

@@ -9,6 +9,7 @@ type Diagnosis = { result_birds: number; seasons_ingested: number; results_statu
   tiers: Record<string, number>; lots_with_ring: number; sample_lot_rings: string[]; sample_result_rings: string[];
   lots_in_results?: number; result_seasons?: string[] };
 type Resp = { items: Lot[]; banners: { source: string; status: string; message: string }[]; max_bid: number; diagnosis?: Diagnosis;
+  rank_by?: string;
   auctions?: AuctionOverview[] };
 
 function WhyNoScores({ d }: { d: Diagnosis }) {
@@ -54,8 +55,11 @@ export default function Suggestions() {
         <div key={b.source} className="banner">Source <b>{b.source}</b> is {b.status}: {b.message}</div>
       ))}
       <p className="muted">
-        Active lots at or under your max ({zar(data?.max_bid)}), ranked by evidence tier, then score weighted by your
-        family preferences. Tier C is seller-claimed and capped at 60. Tier D is never suggested.
+        Active lots at or under your max ({zar(data?.max_bid)}),{" "}
+        {data?.rank_by === "breeding"
+          ? "lots with breeding evidence first (highest breeding score), then by tier and racing score."
+          : "ranked by evidence tier, then racing score weighted by your family preferences."}{" "}
+        Tier C is seller-claimed and capped at 60; Tier D is never suggested. Change the order in Settings → Ranking.
       </p>
       {data?.diagnosis && <WhyNoScores d={data.diagnosis} />}
       {error && <div className="error">{error}</div>}

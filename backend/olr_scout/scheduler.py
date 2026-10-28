@@ -84,14 +84,14 @@ def _results_for_live_lots():
     with SessionLocal() as s:
         tags = {t for (t,) in s.execute(select(Lot.olr_tag).where(Lot.status == "live", Lot.olr_tag.is_not(None)))}
         names = []
-        from .results.ingest import keep_seasons, seasons_wanted
+        from .results.ingest import keep_seasons, season_needs_download, seasons_wanted
 
         keep = keep_seasons(s)
         for olr in s.scalars(select(Olr).where(Olr.name.in_(tags))):
             wanted = seasons_wanted(s, olr, keep)
             # No seasons known yet (e.g. loft id not discovered) also needs an ingest;
             # older seasons beyond the setting are never fetched.
-            if not olr.seasons or any(season.ingested_at is None for season in wanted):
+            if not olr.seasons or any(season_needs_download(season) for season in wanted):
                 names.append(olr.name)
         if not names:
             return None

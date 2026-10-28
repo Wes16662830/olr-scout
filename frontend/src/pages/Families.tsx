@@ -5,6 +5,8 @@ import { useData } from "../lib/useData";
 type Fam = { family: string; entries: number; aces: number; finalists: number; ace_rate: number; small_sample: boolean;
   seasons: { year: number; olr: string; entries: number; aces: number; ace_rate: number }[] };
 type Resp = { families: Fam[]; persistence: { from: number; to: number; families: number; r: number | null }[];
+  top_parents: { ring: string; name: string | null; raced: string | null; offspring_named: number; offspring_raced: number;
+    aces: number; ace_rate: number; mean_long: number; strength: number; best: { ring: string; olr: string; season: number; is_ace: boolean }[] }[];
   leaders: { breeders: { seller: string; sold_raced: number; aces: number; ace_rate: number }[]; buyers: { bidder: string; lots: number; spent: number | null }[] } };
 
 export default function Families() {
@@ -35,6 +37,22 @@ export default function Families() {
         ))}</tbody>
       </table></div>
       {data?.families.length === 0 && <p>No results ingested yet. Run a results ingest from Sources.</p>}
+      <div className="panel">
+        <h2>Proven parents (offspring in OLR results)</h2>
+        <p className="small muted">Built from the sire/dam rings that auction listings name for birds that raced. Grows with
+          every auction OLR Scout watches; small numbers are luck as much as genes.</p>
+        {data && data.top_parents.length === 0 && <p className="muted">No parent has 2+ offspring in the results yet.</p>}
+        {data && data.top_parents.length > 0 && (
+          <div className="scroll"><table>
+            <thead><tr><th>Parent</th><th>Raced</th><th>Offspring raced</th><th>Aces</th><th>Ace rate</th><th>Avg long</th><th>Best offspring</th></tr></thead>
+            <tbody>{data.top_parents.map((p) => (
+              <tr key={p.ring}><td><b>{p.ring}</b>{p.name ? ` “${p.name}”` : ""}</td><td>{p.raced ?? "not in OLR results"}</td>
+                <td>{p.offspring_raced} of {p.offspring_named}</td><td>{p.aces}</td><td>{pct(p.ace_rate)}</td><td>top {pct(p.mean_long)}</td>
+                <td className="small">{p.best.map((b) => `${b.ring}${b.is_ace ? " (ace)" : ""}`).join(", ")}</td></tr>
+            ))}</tbody>
+          </table></div>
+        )}
+      </div>
       <div className="row wrap" style={{ alignItems: "flex-start" }}>
         <div className="panel" style={{ flex: 1, minWidth: 280 }}>
           <h2>Breeder leaders</h2>

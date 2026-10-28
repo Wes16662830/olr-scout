@@ -43,6 +43,8 @@ def bird_summary(s, bird: Bird) -> dict:
         "races": races, "arrived_in": len(flown), "race_count": len(races),
         "best": {"label": best["label"], "position": best["position"], "arrived": best["arrived"]} if best else None,
         "is_ace": bird.is_ace, "long_score": bird.long_score, "final_position": bird.final_position,
+        "hard_score": bird.hard_score, "arrival_rate": bird.arrival_rate, "lost_after": bird.lost_after,
+        "speed_index": bird.speed_index, "speed_pct": bird.speed_pct,
     }
 
 
@@ -117,6 +119,8 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
                         if tier == "A" else ({"ancestor_scores": d.get("ancestor_scores")} if tier == "B" else None)),
         "performance_claims": lot.performance_claims,
         "fetched_at": iso(lot.fetched_at),
+        "breeding_score": lot.breeding_score,
+        "breeding": d.get("breeding"),
     }
     sess = object_session(lot)
     if sess is not None:

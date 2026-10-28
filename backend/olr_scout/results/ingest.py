@@ -19,6 +19,10 @@ log = logging.getLogger(__name__)
 #: Live progress of the running results ingest, shown on the Sources screen.
 PROGRESS: dict = {}
 
+# Bump when ingest stores new data, so seasons downloaded by older versions are fetched
+# again once (2: per-bird speed for the speed-vs-winner measure).
+DATA_VERSION = 2
+
 # Editable in Settings → OLR registry. Seasons: year → Benzing season id.
 SEED_REGISTRY = [
     {"name": "AfrikaPro", "loft_id": 147, "aliases": ["afrikapro", "afrika pro"],
@@ -143,6 +147,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
     reg_counts = [t.registered for t in teams if t.registered is not None]
     registered_count = sum(reg_counts) if reg_counts else None
     results: dict[int, dict[str, int]] = {}
+    speeds: dict[int, dict[str, float]] = {}
     arrived_of: dict[int, int | None] = {}
     for f in flights:
         fr = downloaded.get(f.id)
@@ -154,6 +159,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
         positions = [r.position for r in fr.rows if r.position]
         arrived_of[f.id] = f.arrived or fr.total or (max(positions) if positions else len(fr.rows))
         per: dict[str, int] = {}
+        spd: dict[str, float] = {}
         for r in fr.rows:
             n = normalise(r.ring_raw)
             if not n:
@@ -167,16 +173,21 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
                     info[k] = str(v).strip()
             if r.position is not None:
                 per[n] = min(per.get(n, r.position), r.position)
+            if r.speed:
+                spd[n] = max(spd.get(n, 0.0), float(r.speed))
         results[f.id] = per
+        speeds[f.id] = spd
     if not any(results.values()):
         raise HealthError(f"season {season_year}: races found but no result rows could be read "
                           "(ring field names changed?) — run diagnose-results")
     PROGRESS.update(phase="scoring birds")
     metrics = season_metrics(
-        [FlightIn(f.id, f.distance_km, arrived_of.get(f.id), f.is_training, f.is_final, f.name) for f in flights],
+        [FlightIn(f.id, f.distance_km, arrived_of.get(f.id), f.is_training, f.is_final, f.name, f.basketed, f.race_no)
+         for f in flights],
         results,
         registered,
         registered_count=registered_count,
+        speeds=speeds,
     )
 
     # ---- 3. store (short write transaction; the caller commits) ----------------
@@ -209,12 +220,15 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
         b.sex = {"c": "cock", "m": "cock", "cock": "cock", "h": "hen", "f": "hen", "hen": "hen"}.get(sx, b.sex)
         b.family_key = family_key(b.team)
         b.is_ace, b.long_score, b.all_score, b.final_position = m.is_ace, m.long_score, m.all_score, m.final_position
+        b.hard_score, b.arrival_rate, b.lost_after = m.hard_score, m.arrival_rate, m.lost_after
+        b.speed_index, b.speed_pct = m.speed_index, m.speed_pct
         s.add(b)
         birds.append((b, m))
     s.flush()  # assigns ids in one go
-    s.add_all(BirdResult(bird_id=b.id, flight_id=fid, position=pos)
+    s.add_all(BirdResult(bird_id=b.id, flight_id=fid, position=pos, speed=speeds.get(fid, {}).get(b.ring_norm))
               for b, m in birds for fid, pos in m.positions.items() if pos is not None)
     season.ingested_at = now_utc()
+    season.data_version = DATA_VERSION
     s.flush()
     recompute_family_stats(s, season.olr_id)
     return report
@@ -291,6 +305,10 @@ def _rescore_lots(s: Session) -> None:
 NO_RACES_RECHECK_HOURS = 6
 
 
+def season_needs_download(season: Season) -> bool:
+    return season.ingested_at is None or (season.data_version or 1) < DATA_VERSION
+
+
 def seasons_wanted(s: Session, olr: Olr, keep: int) -> list[Season]:
     """The OLR's newest ``keep`` seasons, not counting seasons known to have no races yet."""
     from datetime import timedelta
@@ -362,7 +380,8 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
             if counted >= keep:
                 break  # older seasons are not needed (Settings → OLR seasons to download)
             newest = i == 0
-            if season.ingested_at and (only_missing or not newest):
+            outdated = (season.data_version or 1) < DATA_VERSION
+            if season.ingested_at and not outdated and (only_missing or not newest):
                 counted += 1  # already stored and finished
                 continue
             try:

@@ -137,6 +137,28 @@ A higher tier always ranks above a lower one. Details:
 * Claim mismatch: the text says ace/winner/1st near an ancestor ring, but the matched
   bird is not an ace and its best race was worse than the 20th percentile (Settings).
 
+### Racing score vs breeding score
+
+The card shows two numbers.
+
+* **Racing** (the Tier A score above) now also weighs **hard races** (mean
+  placing in the season's 3 highest-loss races, from basketed vs arrived),
+  **reliability** (share of races arrived; the card shows when a bird was last
+  seen) and **speed** (mean speed as a share of each long race's winner, ranked
+  within the season). Default weights: long 40, consistency 10, final 10,
+  family 15, siblings 5, hard 10, reliability 5, speed 5.
+* **Breeding** is built from offspring results, not the bird's own racing:
+  **progeny 40 · siblings 25 · verified parents 15 · breeder record 10 · own
+  racing 10**. Parent→offspring links come from the sire/dam rings auction
+  listings give for birds that are in OLR results, collected from every auction
+  OLR Scout watches. Ace rates are shrunk toward the 5% field rate (10-offspring
+  prior). Breeder record and own racing never exceed their 10% each. A lot with
+  no progeny, sibling or verified-parent evidence gets **no** breeding score,
+  and the card says so. Confidence: high with 8+ raced offspring/siblings,
+  medium with 3+ (or 2 verified parents), else low.
+* Settings → Ranking orders Suggestions by either score; the Family Builder
+  plans on the breeding score where a lot has one.
+
 All weights and thresholds are editable in **Settings**.
 
 ## How to add a new auction site
