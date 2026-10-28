@@ -86,6 +86,12 @@ def get_suggestions(s: Session = Depends(get_session), include_over_max: bool = 
         "sample_lot_rings": [r for (r,) in s.execute(select(Lot.ring_raw).where(
             Lot.status == "live", Lot.ring_raw.is_not(None)).limit(5))],
         "sample_result_rings": [r for (r,) in s.execute(select(Bird.ring_raw).limit(5))],
+        # Live lots whose ring appears in the stored results (same ring, any formatting).
+        "lots_in_results": s.scalar(select(func.count(func.distinct(Lot.id))).select_from(Lot).join(
+            Bird, Bird.ring_norm == Lot.ring_norm).where(Lot.status.in_(("live", "upcoming")))) or 0,
+        "result_seasons": [f"{o} {y}" for o, y in s.execute(
+            select(Olr.name, Season.year).join(Season, Season.olr_id == Olr.id)
+            .where(Season.ingested_at.is_not(None)).order_by(Season.year.desc()))],
     }
     return {"items": [lot_card(x["lot"], prefs, {"value_rank": x.get("value_rank")}) for x in items],
             "banners": banners, "max_bid": prefs["max_bid"], "diagnosis": diagnosis}

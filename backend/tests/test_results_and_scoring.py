@@ -202,3 +202,15 @@ def test_polish_ring_with_numeric_club():
 
     r = parse_ring("PL-25-0400-3205")
     assert (r.country, r.year, r.club, r.number) == ("PL", 2025, "0400", "3205")
+
+
+def test_lots_are_matched_as_each_season_arrives(session, client):
+    from olr_scout.models import Lot
+
+    from .helpers import make_lot
+
+    lot = make_lot(session, 1, ring_raw="ZA 26 100000", current_bid=500)  # formatted like an auction site
+    session.commit()
+    ingest_all(session, BenzingResultsSource(client, sleep=lambda s: None), ["AfrikaPro"])
+    session.refresh(lot)
+    assert lot.tier == "A" and lot.match_confidence == "exact" and lot.score > 33

@@ -5,7 +5,8 @@ import { zar } from "../lib/format";
 import { useData } from "../lib/useData";
 
 type Diagnosis = { result_birds: number; seasons_ingested: number; results_status: string; results_message: string;
-  tiers: Record<string, number>; lots_with_ring: number; sample_lot_rings: string[]; sample_result_rings: string[] };
+  tiers: Record<string, number>; lots_with_ring: number; sample_lot_rings: string[]; sample_result_rings: string[];
+  lots_in_results?: number; result_seasons?: string[] };
 type Resp = { items: Lot[]; banners: { source: string; status: string; message: string }[]; max_bid: number; diagnosis?: Diagnosis };
 
 function WhyNoScores({ d }: { d: Diagnosis }) {
@@ -21,10 +22,19 @@ function WhyNoScores({ d }: { d: Diagnosis }) {
       </div>
     );
   }
+  if (d.lots_in_results) {
+    return (
+      <div className="banner">
+        <b>{d.lots_in_results} live lots have a ring that is in the OLR results</b> — they are being matched and scored
+        now. Refresh this page in a minute. Seasons loaded: {d.result_seasons?.join(", ")}.
+      </div>
+    );
+  }
   return (
     <div className="banner">
-      <b>{d.result_birds.toLocaleString("en-ZA")} result birds are loaded ({d.seasons_ingested} seasons), but no live lot
-      matched them.</b> Usually the ring formats differ between the sites. {d.lots_with_ring} live lots have a ring.
+      <b>{d.result_birds.toLocaleString("en-ZA")} result birds are loaded ({d.result_seasons?.join(", ") || `${d.seasons_ingested} seasons`}),
+      and none of the {d.lots_with_ring} live lot rings is among them yet.</b> Older seasons may still be downloading
+      (a ZA 23 bird raced in 2024). If this stays after all seasons are in, the formats differ.
       Lot rings look like: <code>{d.sample_lot_rings.join(" · ") || "none"}</code>. Result rings look like:{" "}
       <code>{d.sample_result_rings.join(" · ")}</code>. Send a screenshot of this box.
     </div>

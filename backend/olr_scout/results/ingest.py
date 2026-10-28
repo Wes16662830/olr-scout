@@ -240,7 +240,21 @@ def race_history(s: Session, ring_norm: str) -> BirdRecord:
     return rec
 
 
-def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = None, only_missing: bool = False) -> dict:
+def _rescore_lots(s: Session) -> None:
+    """Match and score live lots against everything ingested so far."""
+    from ..scoring import engine, seller
+
+    try:
+        seller.recompute(s)
+        engine.score_all(s)
+        s.commit()
+    except Exception:
+        s.rollback()
+        log.exception("rescoring lots after a season")
+
+
+def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = None, only_missing: bool = False,
+               rescore_each_season: bool = True) -> dict:
     """Nightly / on-demand ingest. Records health on the 'benzing' source row."""
     health = s.get(SourceHealth, "benzing") or SourceHealth(source_id="benzing")
     s.add(health)
@@ -269,6 +283,9 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
                 health.status, health.last_success = "ok", now_utc()
                 s.commit()  # each finished season is usable straight away
                 PROGRESS["seasons_done"] = PROGRESS.get("seasons_done", 0) + 1
+                if rescore_each_season:
+                    PROGRESS.update(phase="matching lots to the new results")
+                    _rescore_lots(s)
             except NoRacesYet as exc:
                 s.rollback()
                 health = s.get(SourceHealth, "benzing") or health
