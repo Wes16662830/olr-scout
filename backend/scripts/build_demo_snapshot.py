@@ -71,6 +71,20 @@ def seed(s) -> None:
                  olr_tag="AfrikaPro", olr_year=2026, title=f"Lot {100 + i} {text}".strip(),
                  ends_at=now_utc() + timedelta(minutes=25 + 90 * i))
     s.commit()
+    # A finished DEMO auction for the Results screen (prices, buyers and outcomes are made up).
+    from olr_scout.refresh import settle
+
+    buyers = ["b***r", "pigeonman", "GeForce RTX", "loft_77", "b***r", "s***h", "pigeonman", None, "k***p", "t***o"]
+    for i in range(10):
+        price = [8500, 2200, 4100, 600, 12500, 3300, 1500, None, 950, 5200][i]
+        lot = make_lot(s, 200 + i, source="demo", auction_id="demo-closed", auction_name="DEMO AfrikaPro 2026 Auction 1",
+                       ring_raw=f"ZA-26-{100010 + i}", sex="cock" if i % 2 else "hen", seller="Demo Lofts",
+                       olr_tag="AfrikaPro", olr_year=2026, title=f"Lot {200 + i}", status="closed",
+                       current_bid=price, bid_count=0 if price is None else 3 + i, reserve_met=False if i == 3 else True,
+                       leading_bidder=buyers[i], ends_at=now_utc() - timedelta(days=2, minutes=-2 * i))
+        lot.final_read = True
+        settle(lot)
+    s.commit()
     engine.score_all(s)
     first = s.scalar(select(Lot).where(Lot.source == "demo").order_by(Lot.id))
     s.add(Watch(lot_id=first.id))
@@ -99,8 +113,14 @@ def main() -> int:
                  "/settings", "/push/key", "/builder/plans", "/export.csv", "/export/whatsapp"]:
         snap["get"][path] = get(path)
     snap["get"]["/lots?status=all"] = get("/lots?status=all")
-    for lot in snap["get"]["/lots?status=all"]:
-        snap["get"][f"/lots/{lot['id']}"] = get(f"/lots/{lot['id']}")
+    snap["get"]["/results/auctions"] = get("/results/auctions")
+    for a in snap["get"]["/results/auctions"]:
+        path = f"/results/auction?source={a['source']}&auction_id={a['auction_id']}"
+        snap["get"][path] = get(path)
+    closed_ids = [r["id"] for a in snap["get"]["/results/auctions"]
+                  for r in get(f"/results/auction?source={a['source']}&auction_id={a['auction_id']}")["lots"]]
+    for lot_id in [lot["id"] for lot in snap["get"]["/lots?status=all"]] + closed_ids:
+        snap["get"][f"/lots/{lot_id}"] = get(f"/lots/{lot_id}")
     snap["xlsx_base64"] = base64.b64encode(api.get("/api/export.xlsx").content).decode()
     goal = {"pairs": 6, "cocks": 6, "hens": 6, "budget": 60000, "olrs": [], "allow_line_bred": True}
     families = [f["family"] for f in snap["get"]["/families?min_entries=1&limit=300"]["families"]]

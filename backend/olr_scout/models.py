@@ -92,6 +92,13 @@ class Lot(Base):
     url: Mapped[str] = mapped_column(String(500))
     image_url: Mapped[str | None] = mapped_column(String(500))
     status: Mapped[str] = mapped_column(String(20), default="live")  # live|upcoming|closed|sold|unsold
+    # Set when the lot closes (kept for the Auction results screen).
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    final_price: Mapped[int | None] = mapped_column(Integer)
+    sale_status: Mapped[str | None] = mapped_column(String(20))  # sold | unsold
+    sale_note: Mapped[str | None] = mapped_column(String(80))  # e.g. "reserve not met", "no bids"
+    winner: Mapped[str | None] = mapped_column(String(120))  # as the site shows it
+    final_read: Mapped[bool | None] = mapped_column(Boolean)  # lot page re-read after closing
     olr_tag: Mapped[str | None] = mapped_column(String(80))
     olr_year: Mapped[int | None] = mapped_column(Integer)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)

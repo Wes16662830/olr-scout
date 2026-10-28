@@ -597,6 +597,42 @@ def _rescore_in_background() -> None:
     threading.Thread(target=run, daemon=True, name="rescore").start()
 
 
+# ------------------------------------------------------------------ auction results
+@protected.get("/results/auctions")
+def results_auctions(s: Session = Depends(get_session)):
+    from . import auction_results
+
+    return auction_results.auctions(s)
+
+
+@protected.get("/results/auction")
+def results_auction(source: str, auction_id: str, s: Session = Depends(get_session)):
+    from . import auction_results
+
+    return auction_results.auction_detail(s, source, auction_id)
+
+
+@protected.get("/results/auction.csv")
+def results_auction_csv(source: str, auction_id: str, s: Session = Depends(get_session)):
+    import csv
+    import io
+
+    from . import auction_results
+
+    d = auction_results.auction_detail(s, source, auction_id)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Lot", "Ring", "Bird", "Breeder", "Seller", "Tier", "Score", "Ace", "Final price", "Status", "Note",
+                "Winner (as shown)", "Bids", "Closed", "Link"])
+    for r in d["lots"]:
+        w.writerow([r["lot_no"], r["ring"], r["bird_name"], r["breeder"], r["seller"], r["tier"], r["score"],
+                    "yes" if r["is_ace"] else "", r["final_price"], r["sale_status"], r["sale_note"], r["winner"],
+                    r["bids"], r["closed_at"], r["url"]])
+    name = "".join(c if c.isalnum() else "-" for c in (d["auction_name"] or "auction"))[:60]
+    return PlainTextResponse(buf.getvalue(), media_type="text/csv",
+                             headers={"Content-Disposition": f"attachment; filename=results-{name}.csv"})
+
+
 # ------------------------------------------------------------------ export
 def _selected(s: Session, auctions: str | None) -> list[dict]:
     """Suggestions, optionally limited to "source:auction_id" keys (comma-separated)."""

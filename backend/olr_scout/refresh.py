@@ -74,7 +74,32 @@ def upsert_lot(s: Session, lot: Lot) -> LotRow:
         row.leading_bidder = top.get("bidder")
     if is_new or prev_bid != row.current_bid or prev_count != row.bid_count or as_aware(prev_end) != as_aware(row.ends_at):
         s.add(LotPriceHistory(lot_id=row.id, current_bid=row.current_bid, bid_count=row.bid_count, ends_at=row.ends_at))
+    settle(row)
     return row
+
+
+CLOSED = ("closed", "sold", "unsold", "ended")
+
+
+def settle(row: LotRow) -> None:
+    """Record the outcome of a closed lot from what was last seen. Called again after
+    the final read, so later information wins."""
+    if row.status not in CLOSED:
+        return
+    if row.closed_at is None:
+        ends = as_aware(row.ends_at)
+        row.closed_at = ends if ends and ends <= now_utc() else now_utc()
+    row.final_price = row.current_bid
+    row.winner = row.leading_bidder
+    if row.status == "unsold":
+        row.sale_status, row.sale_note = "unsold", "not sold"
+    elif row.current_bid is None or row.bid_count == 0:
+        row.sale_status, row.sale_note = "unsold", "no bids"
+    elif row.reserve_met is False:
+        row.sale_status, row.sale_note = "unsold", "reserve not met"
+    else:
+        row.sale_status = "sold"
+        row.sale_note = None if row.reserve_met else "reserve not shown"
 
 
 def upsert_auction(s: Session, a: Auction, results_link: bool) -> None:
@@ -146,6 +171,7 @@ def _finish_health(s: Session, src: AuctionSource, report: dict, seen_ids: set[i
         for row in s.scalars(select(LotRow).where(LotRow.source == src.key, LotRow.status.in_(("live", "upcoming")))):
             if row.id not in seen_ids:
                 row.status = "closed"
+                settle(row)
     h.lot_count = report["lots"]
     if report.get("source_failed"):
         pass  # status already set from the exception
@@ -254,32 +280,66 @@ def row_to_lot(row: LotRow) -> Lot:
     return lot
 
 
+FINAL_READ_DELAY = timedelta(minutes=1)
+FINAL_READ_WINDOW = timedelta(hours=12)
+FINAL_READS_PER_RUN = 10
+
+
 def hot_refresh(s: Session, sources: dict[str, AuctionSource]) -> int:
-    """Re-read only lots closing within the hot window (default 10 min)."""
+    """Re-read lots closing within the hot window (default 10 min), and read each
+    lot's page once more shortly after it closes to confirm the final price.
+
+    All pages are fetched before anything is written, so the database is never
+    locked while waiting on a site."""
     now = now_utc()
     soon = now + timedelta(minutes=settings.hot_window_minutes)
-    rows = s.scalars(select(LotRow).where(LotRow.status == "live", LotRow.ends_at.is_not(None),
-                                          LotRow.ends_at <= soon, LotRow.ends_at >= now - timedelta(minutes=2))).all()
-    done = []
-    for row in rows:
+    hot = s.scalars(select(LotRow).where(LotRow.status == "live", LotRow.ends_at.is_not(None),
+                                         LotRow.ends_at <= soon, LotRow.ends_at >= now - timedelta(minutes=2))).all()
+    final = s.scalars(select(LotRow).where(
+        LotRow.ends_at.is_not(None), LotRow.ends_at <= now - FINAL_READ_DELAY,
+        LotRow.ends_at >= now - FINAL_READ_WINDOW, LotRow.final_read.is_not(True),
+        LotRow.status.in_(("live",) + CLOSED)).order_by(LotRow.ends_at).limit(FINAL_READS_PER_RUN)).all()
+    jobs = [(row, row_to_lot(row), False) for row in hot] + [(row, row_to_lot(row), True) for row in final]
+    s.commit()  # release before network calls
+
+    fetched: list[tuple[LotRow, object, bool, str | None]] = []
+    blocked: dict[str, str] = {}
+    for row, lot, is_final in jobs:
         src = sources.get(row.source)
-        if src is None:
+        if src is None or row.source in blocked:
             continue
         h = s.get(SourceHealth, row.source)
         if h and h.status in ("degraded", "error") and "blocked" in (h.message or ""):
             continue
         try:
-            fresh = src.refresh_lot(row_to_lot(row))
+            fetched.append((row, src.refresh_lot(lot), is_final, None))
         except SourceBlocked as exc:
-            _health(s, row.source).status = "degraded"
-            _health(s, row.source).message = f"blocked: {exc}"
-            continue
-        except Exception:
-            log.exception("hot refresh %s", row.url)
-            continue
+            blocked[row.source] = str(exc)
+        except Exception as exc:
+            log.warning("re-reading %s: %s", row.url, exc)
+            fetched.append((row, None, is_final, f"{type(exc).__name__}"))
+
+    done = []
+    for source, msg in blocked.items():
+        _health(s, source).status = "degraded"
+        _health(s, source).message = f"blocked: {msg}"
+    for row, fresh, is_final, error in fetched:
         if fresh is not None:
             fresh.fetched_at = now_utc()
-            done.append(upsert_lot(s, fresh))
+            ends = as_aware(fresh.ends_at)
+            if is_final and fresh.status == "live" and ends is not None and ends <= now_utc():
+                fresh.status = "closed"  # page still says live but its time has passed
+            row = upsert_lot(s, fresh)
+            done.append(row)
+        if is_final:
+            still_running = row.status == "live" and as_aware(row.ends_at) and as_aware(row.ends_at) > now_utc()
+            if not still_running:  # anti-sniping may have extended it: read again later
+                if row.status == "live":
+                    row.status = "closed"
+                settle(row)
+                row.final_read = True
+                if error:
+                    row.extra = {**(row.extra or {}), "final_read_note": f"lot page not readable after closing ({error})"}
     if done:
         engine.score_all(s, done)
         alerts.evaluate(s)

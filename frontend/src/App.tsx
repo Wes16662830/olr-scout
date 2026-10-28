@@ -9,13 +9,14 @@ import Families from "./pages/Families";
 import Login from "./pages/Login";
 import LotDetail from "./pages/LotDetail";
 import PedigreeReview from "./pages/PedigreeReview";
+import Results from "./pages/Results";
 import Settings from "./pages/Settings";
 import Sources from "./pages/Sources";
 import Suggestions from "./pages/Suggestions";
 import Watchlist from "./pages/Watchlist";
 
 const NAV: [string, string][] = [
-  ["/", "Suggestions"], ["/closing", "Closing soon"], ["/watchlist", "Watchlist"], ["/families", "Families"],
+  ["/", "Suggestions"], ["/closing", "Closing soon"], ["/watchlist", "Watchlist"], ["/results", "Results"], ["/families", "Families"],
   ["/builder", "Family Builder"], ["/pedigree", "Pedigree review"], ["/sources", "Sources"], ["/settings", "Settings"], ["/export", "Export"],
 ];
 
@@ -55,6 +56,7 @@ export default function App() {
           <Route path="/closing" element={<Closing />} />
           <Route path="/watchlist" element={<Watchlist />} />
           <Route path="/lot/:id" element={<LotDetail />} />
+          <Route path="/results" element={<Results />} />
           <Route path="/families" element={<Families />} />
           <Route path="/builder" element={<Builder />} />
           <Route path="/pedigree" element={<PedigreeReview />} />
