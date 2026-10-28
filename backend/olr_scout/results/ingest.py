@@ -106,6 +106,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
     report = {"season": season.id, "flights": 0, "rows": 0, "mismatches": []}
     team_of: dict[str, str] = {}
     raw_of: dict[str, str] = {}
+    info_of: dict[str, dict] = {}  # name, colour, sex, team country from result rows
     registered: set[str] = set()
     try:
         teams = src.season_teams(season.id)
@@ -151,6 +152,10 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
             raw_of.setdefault(n, r.ring_raw)
             if r.team and n not in team_of:
                 team_of[n] = r.team
+            info = info_of.setdefault(n, {})
+            for k, v in (("name", r.name), ("colour", r.colour), ("sex", r.sex), ("team_country", r.team_country)):
+                if v and not info.get(k):
+                    info[k] = str(v).strip()
             if r.position is not None:
                 per[n] = min(per.get(n, r.position), r.position)
         results[f.id] = per
@@ -171,6 +176,12 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
     for ring, m in metrics.items():
         b = existing.get(ring) or Bird(season_id=season.id, ring_norm=ring, ring_raw=raw_of.get(ring, ring))
         b.team = team_of.get(ring)
+        info = info_of.get(ring, {})
+        b.name = info.get("name") or b.name
+        b.colour = info.get("colour") or b.colour
+        b.team_country = info.get("team_country") or b.team_country
+        sx = (info.get("sex") or "").lower()
+        b.sex = {"c": "cock", "m": "cock", "cock": "cock", "h": "hen", "f": "hen", "hen": "hen"}.get(sx, b.sex)
         b.family_key = family_key(b.team)
         b.is_ace, b.long_score, b.all_score, b.final_position = m.is_ace, m.long_score, m.all_score, m.final_position
         s.add(b)

@@ -42,6 +42,7 @@ class ResultRow:
     speed: float | None = None
     sex: str | None = None
     colour: str | None = None
+    team_country: str | None = None
 
 
 @dataclass

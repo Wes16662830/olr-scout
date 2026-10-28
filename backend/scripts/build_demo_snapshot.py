@@ -41,7 +41,7 @@ from tests.helpers import make_lot  # noqa: E402
 OUT = ROOT.parent / "frontend" / "src" / "demo" / "snapshot.json"
 
 DEMO_LOTS = [  # (sex, current bid, seller text) — rings point at birds in the synthetic season
-    ("cock", 1500, "Kittel"),
+    ("cock", 1500, 'Kittel. Sire: ZA 2023 PORT 555 "Blue Kittel". Dam: ZA-26-100009 ace hen.'),
     ("hen", 1300, "Janssen"),
     ("cock", 2500, "Kittel x Janssen"),
     ("hen", 4200, "Thoné hen"),

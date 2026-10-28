@@ -229,6 +229,8 @@ class BenzingResultsSource(ResultsSource):
                         speed=_float(_get(r, "speed", "velocity", "speed_mpm")),
                         sex=_get(r, "sex", "gender", "pigeon.sex", "pigeon.gender"),
                         colour=_get(r, "color", "colour", "pigeon.color", "pigeon.colour"),
+                        team_country=_get(r, "pigeon.pigeon_team.country", "pigeon_team.country", "team.country",
+                                          "country"),
                     )
                 )
             last = _last_page(data)

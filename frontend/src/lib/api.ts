@@ -77,4 +77,22 @@ export interface LotCard {
   performance: Record<string, unknown> | null;
   performance_claims: string | null;
   value_rank?: number | null;
+  bird_name?: string | null;
+  bird?: BirdSummary | null;
+  lineage?: Lineage;
+}
+
+export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; pct: number | null; long: boolean; final: boolean }
+export interface BirdSummary {
+  ring: string; name: string | null; colour: string | null; sex: string | null;
+  breeder: string | null; breeder_country: string | null; olr: string; season: number; registered: number | null;
+  races: RaceChip[]; arrived_in: number; race_count: number;
+  best: { label: string; position: number; arrived: number | null } | null;
+  is_ace: boolean; long_score: number | null; final_position: number | null;
+}
+export interface ParentRecord { ring: string; name: string | null; olr: string; season: number; long_score: number | null; is_ace: boolean; breeder: string | null }
+export interface Lineage {
+  parents: { relation: string; ring: string | null; name: string | null; status: string; claims_ace: boolean; record: ParentRecord | null }[];
+  grandparents: { total: number; verified: number };
+  pedigree_url: string | null;
 }

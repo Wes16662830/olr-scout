@@ -186,6 +186,7 @@ class Bird(Base):
     ring_norm: Mapped[str] = mapped_column(String(80), index=True)
     name: Mapped[str | None] = mapped_column(String(200))
     team: Mapped[str | None] = mapped_column(String(300))
+    team_country: Mapped[str | None] = mapped_column(String(10))
     family_key: Mapped[str | None] = mapped_column(String(300), index=True)
     sex: Mapped[str | None] = mapped_column(String(10))
     colour: Mapped[str | None] = mapped_column(String(60))
