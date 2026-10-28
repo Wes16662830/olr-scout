@@ -12,14 +12,18 @@ if exist .venv rmdir /s /q .venv
 
 rem Use Python 3.13, 3.12 or 3.11. Brand-new versions such as 3.15 often lack
 rem ready-made packages on Windows and then fail asking for C++ Build Tools.
-set "PYVER="
-py -3.13 -c "pass" >nul 2>&1 && set "PYVER=3.13"
-if not defined PYVER py -3.12 -c "pass" >nul 2>&1 && set "PYVER=3.12"
-if not defined PYVER py -3.11 -c "pass" >nul 2>&1 && set "PYVER=3.11"
-if not defined PYVER goto :wrongpython
+set "PYCMD="
+py -3.13 -c "pass" >nul 2>&1 && set "PYCMD=py -3.13"
+if not defined PYCMD py -V:3.13 -c "pass" >nul 2>&1 && set "PYCMD=py -V:3.13"
+if not defined PYCMD python3.13 -c "pass" >nul 2>&1 && set "PYCMD=python3.13"
+if not defined PYCMD py -3.12 -c "pass" >nul 2>&1 && set "PYCMD=py -3.12"
+if not defined PYCMD python3.12 -c "pass" >nul 2>&1 && set "PYCMD=python3.12"
+if not defined PYCMD py -3.11 -c "pass" >nul 2>&1 && set "PYCMD=py -3.11"
+if not defined PYCMD goto :wrongpython
 
-echo Using Python %PYVER%
-py -%PYVER% -m venv .venv
+echo Using: %PYCMD%
+%PYCMD% --version
+%PYCMD% -m venv .venv
 if not exist ".venv\Scripts\python.exe" goto :wrongpython
 ".venv\Scripts\python.exe" -m pip install --upgrade pip
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
