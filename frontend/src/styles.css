@@ -104,3 +104,5 @@ th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line
 .results-table td:nth-child(2) { white-space: normal; min-width: 160px; }
 tr.mine-won td { background: rgba(22, 101, 52, .12); }
 tr.mine-bid td { background: rgba(180, 83, 9, .08); }
+.last-bid { font-size: 13px; margin-top: 2px; }
+.last-bid.you { color: var(--good); }

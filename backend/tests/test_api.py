@@ -73,3 +73,13 @@ def test_export_limited_to_selected_auctions(api):
     csv_one = api.get("/api/export.csv", params={"auctions": one}).text.strip().splitlines()
     expected = sum(1 for i in items if f"{i['source']}:{i['auction_id']}" == one)
     assert len(csv_one) - 1 == expected < len(csv_all) - 1
+
+
+def test_card_shows_latest_bid_and_bidder(api):
+    login(api)
+    cards = {c["title"]: c for c in api.get("/api/lots").json()}
+    tp = next(c for t, c in cards.items() if "7829 (C) – Kittel" in t)
+    assert tp["last_bid"]["amount"] == 3500 and tp["last_bid"]["bidder"] == "GeForce RTX"
+    assert tp["last_bid"]["at"] and tp["last_bid"]["count"] == 3 and tp["last_bid"]["bidder_shown"]
+    elite = next(c for c in cards.values() if c["source"] == "elite" and c["current_bid"] == 1200)
+    assert elite["last_bid"] == {"amount": 1200, "bidder": None, "at": None, "count": 4, "bidder_shown": False}

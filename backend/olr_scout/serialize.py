@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import object_session
 
-from .models import AncestorClaim, Bird, Flight
+from .models import AncestorClaim, BidHistory, Bird, Flight
 from .scoring import engine, preferences
 from .scoring.tier_a import long_flight_ids, FlightIn
 from .util.timeutil import as_aware
@@ -73,6 +73,20 @@ def parents(s, lot) -> dict:
             "pedigree_url": lot.pedigree_url}
 
 
+def last_bid(s, lot) -> dict | None:
+    """The most recent bid as the site shows it (amount, bidder, time), else what the
+    listing gives (current bid and bid count, no bidder)."""
+    b = s.scalars(select(BidHistory).where(BidHistory.lot_id == lot.id)
+                  .order_by(BidHistory.amount.desc(), BidHistory.at.desc()).limit(1)).first()
+    if b is not None and b.amount is not None:
+        return {"amount": b.amount, "bidder": b.bidder, "at": iso(b.at), "count": lot.bid_count,
+                "bidder_shown": True}
+    if lot.current_bid is not None:
+        return {"amount": lot.current_bid, "bidder": None, "at": None, "count": lot.bid_count,
+                "bidder_shown": False}
+    return None
+
+
 def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
     tags = lot.family_tags or []
     limit = preferences.lot_max(lot, tags, prefs)
@@ -108,6 +122,7 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
     if sess is not None:
         card["bird"] = bird_summary(sess, lot.bird) if (tier == "A" and lot.bird is not None) else None
         card["lineage"] = parents(sess, lot)
+        card["last_bid"] = last_bid(sess, lot)
         card["bird_name"] = (card["bird"] or {}).get("name") or (lot.extra or {}).get("bird_name")
     if extra:
         card.update(extra)

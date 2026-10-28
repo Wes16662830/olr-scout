@@ -79,6 +79,7 @@ export interface LotCard {
   performance_claims: string | null;
   value_rank?: number | null;
   bird_name?: string | null;
+  last_bid?: { amount: number; bidder: string | null; at: string | null; count: number | null; bidder_shown: boolean } | null;
   bird?: BirdSummary | null;
   lineage?: Lineage;
 }

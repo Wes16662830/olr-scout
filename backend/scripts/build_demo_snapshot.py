@@ -71,6 +71,16 @@ def seed(s) -> None:
                  olr_tag="AfrikaPro", olr_year=2026, title=f"Lot {100 + i} {text}".strip(),
                  ends_at=now_utc() + timedelta(minutes=25 + 90 * i))
     s.commit()
+    # DEMO bid history (made-up usernames) so cards show a latest bidder.
+    from olr_scout.models import BidHistory
+
+    for i, lot in enumerate(s.scalars(select(Lot).where(Lot.source == "demo").order_by(Lot.id)).all()[:4]):
+        for j, who in enumerate(["b***r", "pigeonman", "GeForce RTX" if i == 1 else "k***p"]):
+            s.add(BidHistory(lot_id=lot.id, bidder=who, amount=(lot.current_bid or 500) - (2 - j) * 100,
+                             at=now_utc() - timedelta(hours=3 - j)))
+        lot.bid_count = 3
+        lot.leading_bidder = "GeForce RTX" if i == 1 else "k***p"
+    s.commit()
     # A finished DEMO auction for the Results screen (prices, buyers and outcomes are made up).
     from olr_scout.refresh import settle
 

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { api, BirdSummary, Lineage, LotCard as Lot } from "../lib/api";
-import { countdown, pct, useNow, zar } from "../lib/format";
+import { countdown, pct, useNow, when, zar } from "../lib/format";
 
 const TIER_TEXT: Record<string, string> = {
   A: "A · raced & verified",
@@ -12,6 +12,21 @@ const TIER_TEXT: Record<string, string> = {
 export function TierBadge({ tier }: { tier: Lot["tier"] }) {
   if (!tier) return null;
   return <span className={`badge tier-${tier}`}>{TIER_TEXT[tier]}</span>;
+}
+
+function LastBid({ lot }: { lot: Lot }) {
+  const b = lot.last_bid;
+  if (!b) return <div className="last-bid muted">No bids yet{lot.starting_bid ? ` · starts at ${zar(lot.starting_bid)}` : ""}</div>;
+  return (
+    <div className={`last-bid ${lot.you_lead ? "you" : ""}`}>
+      Latest bid <b>{zar(b.amount)}</b>
+      {b.bidder_shown
+        ? <> by <b>{b.bidder || "unknown"}</b>{lot.you_lead ? " (you)" : ""}</>
+        : <span className="muted"> · bidder not shown by the site</span>}
+      {b.at && <span className="muted"> · {when(b.at)}</span>}
+      {b.count !== null && b.count !== undefined && <span className="muted"> · {b.count} bid{b.count === 1 ? "" : "s"}</span>}
+    </div>
+  );
 }
 
 export function Countdown({ iso }: { iso: string | null }) {
@@ -124,6 +139,7 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
           <div className="muted">
             {lot.lot_no === null ? `${lot.auction_name} · ` : ""}{lot.seller || "seller ?"} · {lot.source}
           </div>
+          <LastBid lot={lot} />
           <div className="row wrap price-row">
             <span className={lot.over_max ? "price over" : lot.near_max ? "price near" : "price"}>
               {zar(lot.price)} <small>/ max {zar(lot.max)}</small>
