@@ -386,22 +386,77 @@ def list_olrs(s: Session = Depends(get_session)):
 
 @protected.put("/olrs")
 def save_olr(body: dict = Body(...), s: Session = Depends(get_session)):
-    """Add or edit a registry entry: {name, loft_id, aliases, enabled, seasons: {year: id}}."""
-    olr = s.get(Olr, body["id"]) if body.get("id") else s.scalar(select(Olr).where(Olr.name == body["name"]))
+    """Add or edit a registry entry: {id?, name, loft_id, aliases, enabled, seasons: {year: id}}.
+
+    A loft id or season id held by an entry the app added automatically from the loft
+    list is merged into this one; one held by another real entry is refused with the
+    reason (it used to fail silently with a database error)."""
+    notes: list[str] = []
+    olr = s.get(Olr, int(body["id"])) if body.get("id") else None
     if olr is None:
-        olr = Olr(name=body["name"])
-        s.add(olr)
-    for k in ("name", "loft_id", "aliases", "enabled"):
+        name = str(body.get("name") or "").strip()
+        if not name:
+            raise HTTPException(400, "Give the OLR a name")
+        olr = s.scalar(select(Olr).where(Olr.name == name))
+        if olr is None:
+            olr = Olr(name=name, aliases=[name.lower()], enabled=True)
+            s.add(olr)
+            s.flush()
+            notes.append(f"{name} added")
+    if "name" in body and str(body["name"]).strip() and str(body["name"]).strip() != olr.name:
+        clash = s.scalar(select(Olr).where(Olr.name == str(body["name"]).strip(), Olr.id != olr.id))
+        if clash:
+            raise HTTPException(409, f"Another OLR is already called {clash.name}")
+        olr.name = str(body["name"]).strip()
+
+    if "loft_id" in body:
+        raw = body["loft_id"]
+        try:
+            loft_id = int(raw) if raw not in (None, "") else None
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"Loft id must be a number (got {raw!r})")
+        if loft_id is not None:
+            holder = s.scalar(select(Olr).where(Olr.loft_id == loft_id, Olr.id != olr.id))
+            if holder is not None and not holder.auto_discovered:
+                raise HTTPException(409, f"Loft {loft_id} already belongs to {holder.name}. Clear it there first.")
+            if holder is not None:
+                # Auto-added from the results site's loft list: fold it into this entry.
+                for season in list(holder.seasons):
+                    olr.seasons.append(season)  # moves it (a cascade would delete it with the holder)
+                olr.aliases = sorted(set((olr.aliases or []) + (holder.aliases or [])))
+                notes.append(f"merged the automatically added entry “{holder.name}”")
+                holder.loft_id = None
+                s.flush()
+                s.delete(holder)
+                s.flush()
+        olr.loft_id = loft_id
+        notes.append(f"loft id {loft_id}" if loft_id else "loft id cleared")
+
+    for k in ("aliases", "enabled"):
         if k in body:
             setattr(olr, k, body[k])
     s.flush()
     for year, sid in (body.get("seasons") or {}).items():
-        if s.get(Season, int(sid)) is None:
-            s.add(Season(id=int(sid), olr_id=olr.id, year=int(year)))
+        try:
+            sid, year = int(sid), int(year)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Season year and id must be numbers")
+        existing = s.get(Season, sid)
+        if existing is None:
+            s.add(Season(id=sid, olr_id=olr.id, year=year))
+            notes.append(f"season {year} added")
+        elif existing.olr_id != olr.id:
+            other = s.get(Olr, existing.olr_id)
+            if other is not None and not other.auto_discovered:
+                raise HTTPException(409, f"Season {sid} already belongs to {other.name}")
+            olr.seasons.append(existing)
+            notes.append(f"season {year} moved here")
     s.commit()
-    if "enabled" in body:
+    if "enabled" in body or "loft_id" in body:
         _rescore_in_background()  # lots tied to this OLR may change tier
-    return {"ok": True, "id": olr.id, "enabled": olr.enabled}
+    return {"ok": True, "id": olr.id, "enabled": olr.enabled,
+            "message": f"{olr.name} saved" + (f" — {', '.join(notes)}" if notes else "") +
+                       (". Click Ingest OLR results now on Sources to download its results." if "loft_id" in body else "")}
 
 
 # ------------------------------------------------------------------ builder & inventory

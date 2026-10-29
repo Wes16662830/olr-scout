@@ -24,6 +24,23 @@ export default function Settings() {
   const [msg, setMsg] = useState("");
   const [newFam, setNewFam] = useState("");
   const [newOlr, setNewOlr] = useState({ name: "", loft_id: "", year: "", season_id: "" });
+  const [loftEdit, setLoftEdit] = useState<Record<number, string | number>>({});
+  const [olrMsg, setOlrMsg] = useState("");
+  const [olrBusy, setOlrBusy] = useState(false);
+  const saveOlr = async (body: Record<string, unknown>, after?: () => void) => {
+    setOlrBusy(true);
+    setOlrMsg("Saving…");
+    try {
+      const r = await api.put<{ message?: string }>("/olrs", body);
+      setOlrMsg(r.message ? `✓ ${r.message}` : "✓ Saved");
+      after?.();
+    } catch (e) {
+      setOlrMsg(`Not saved: ${(e as Error).message}`);
+    } finally {
+      setOlrBusy(false);
+      olrs.reload();
+    }
+  };
   useEffect(() => { if (data) setP(data); }, [data]);
   if (!p) return <p>Loading…</p>;
   const save = async () => {
@@ -155,27 +172,32 @@ export default function Settings() {
         <p className="small muted">Name → Benzing loft id → seasons. Auto-discovered lofts arrive disabled; enable the ones that are real OLRs.</p>
         <table><thead><tr><th>OLR</th><th>Loft id</th><th>Seasons (year: id, birds)</th><th>Enabled</th></tr></thead>
           <tbody>{olrs.data?.map((o) => (
-            <tr key={o.id}><td>{o.name}{o.auto_discovered && <span className="badge">auto</span>}</td><td>{o.loft_id ?? "–"}</td>
-              <td className="small">{o.seasons.map((s) => `${s.year}: ${s.id}${s.registered ? ` (${s.registered})` : ""}${s.ingested_at ? "" : " – not ingested"}`).join(" · ")}</td>
-              <td><input type="checkbox" checked={o.enabled} onChange={async (e) => {
-                const enabled = e.target.checked;
-                olrs.setData((olrs.data || []).map((x) => (x.id === o.id ? { ...x, enabled } : x)));
-                try { await api.put("/olrs", { id: o.id, enabled }); setMsg(`${o.name} ${enabled ? "on" : "off"} ✓`); }
-                catch (err) { setMsg(`${o.name} not changed: ${(err as Error).message}`); }
-                olrs.reload();
-              }} /></td></tr>
+            <tr key={o.id}><td>{o.name}{o.auto_discovered && <span className="badge">auto</span>}</td>
+              <td className="row">
+                <input type="number" className="narrow" value={loftEdit[o.id] ?? (o.loft_id ?? "")} placeholder="–"
+                  onChange={(e) => setLoftEdit({ ...loftEdit, [o.id]: e.target.value })} />
+                {loftEdit[o.id] !== undefined && String(loftEdit[o.id]) !== String(o.loft_id ?? "") && (
+                  <button className="btn small" onClick={() => saveOlr({ id: o.id, loft_id: loftEdit[o.id] === "" ? null : Number(loftEdit[o.id]) },
+                    () => setLoftEdit((m) => { const n = { ...m }; delete n[o.id]; return n; }))}>Save</button>
+                )}
+              </td>
+              <td className="small">{o.seasons.map((x) => `${x.year}: ${x.id}${x.registered ? ` (${x.registered})` : ""}${x.ingested_at ? "" : " – not downloaded"}`).join(" · ") || "none found yet"}</td>
+              <td><input type="checkbox" checked={o.enabled} onChange={(e) => saveOlr({ id: o.id, enabled: e.target.checked })} /></td></tr>
           ))}</tbody></table>
+        <h3>Add an OLR</h3>
         <div className="row wrap">
-          <input placeholder="OLR name" value={newOlr.name} onChange={(e) => setNewOlr({ ...newOlr, name: e.target.value })} />
+          <input placeholder="OLR name (required)" value={newOlr.name} onChange={(e) => setNewOlr({ ...newOlr, name: e.target.value })} />
           <input placeholder="Loft id" value={newOlr.loft_id} onChange={(e) => setNewOlr({ ...newOlr, loft_id: e.target.value })} />
-          <input placeholder="Season year" value={newOlr.year} onChange={(e) => setNewOlr({ ...newOlr, year: e.target.value })} />
-          <input placeholder="Season id" value={newOlr.season_id} onChange={(e) => setNewOlr({ ...newOlr, season_id: e.target.value })} />
-          <button className="btn ghost" onClick={async () => {
-            await api.put("/olrs", { name: newOlr.name, loft_id: newOlr.loft_id ? Number(newOlr.loft_id) : null, aliases: [newOlr.name.toLowerCase()], enabled: true,
-              seasons: newOlr.year && newOlr.season_id ? { [newOlr.year]: Number(newOlr.season_id) } : {} });
-            setNewOlr({ name: "", loft_id: "", year: "", season_id: "" }); olrs.reload();
-          }}>Save OLR</button>
+          <input placeholder="Season year (optional)" value={newOlr.year} onChange={(e) => setNewOlr({ ...newOlr, year: e.target.value })} />
+          <input placeholder="Season id (optional)" value={newOlr.season_id} onChange={(e) => setNewOlr({ ...newOlr, season_id: e.target.value })} />
+          <button className="btn" disabled={!newOlr.name.trim() || olrBusy} onClick={() => saveOlr({
+            name: newOlr.name.trim(), loft_id: newOlr.loft_id ? Number(newOlr.loft_id) : null, enabled: true,
+            seasons: newOlr.year && newOlr.season_id ? { [newOlr.year]: Number(newOlr.season_id) } : {},
+          }, () => setNewOlr({ name: "", loft_id: "", year: "", season_id: "" }))}>Save OLR</button>
         </div>
+        {olrMsg && <p className={olrMsg.startsWith("Not saved") ? "error" : "banner"}>{olrMsg}</p>}
+        <p className="small muted">Find a loft id on oneloftrace.live: open the OLR's page, the number in the address
+          (…/lofts/<b>147</b>) is its id. Seasons are found automatically from the loft page when results are downloaded.</p>
       </div>
     </section>
   );
