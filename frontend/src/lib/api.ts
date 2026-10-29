@@ -108,6 +108,8 @@ export interface Breeding {
   score: number | null; confidence: "none" | "low" | "medium" | "high";
   components?: Record<string, number>; used?: Record<string, number>; missing?: string[];
   progeny?: OffspringRec | null; siblings?: OffspringRec | null; parents_verified?: number; parents_named?: number;
+  ancestors_verified?: number;
+  pedigree?: { ancestors_named: number; claimed_aces: number; read_from: string | null; read_error: string | null; has_pedigree: boolean };
 }
 export interface ParentRecord { ring: string; name: string | null; olr: string; season: number; long_score: number | null; is_ace: boolean; breeder: string | null }
 export interface Lineage {

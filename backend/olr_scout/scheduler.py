@@ -22,7 +22,8 @@ log = logging.getLogger(__name__)
 
 _lock = threading.Lock()  # one full lot refresh at a time
 _results_lock = threading.Lock()  # one results ingest at a time (separate site, runs alongside)
-_hot_lock = threading.Lock()  # the 20 s near-close refresh runs even during a long full refresh
+_hot_lock = threading.Lock()
+_ped_lock = threading.Lock()  # background pedigree reading  # the 20 s near-close refresh runs even during a long full refresh
 client = PoliteClient()
 sources = build_sources(client)
 results_source = BenzingResultsSource(client)
@@ -68,6 +69,21 @@ def job_hot_refresh():
             return hot_refresh(s, sources)
     finally:
         _hot_lock.release()
+
+
+def job_read_pedigrees():
+    if not _ped_lock.acquire(blocking=False):
+        return None
+    try:
+        from .pedigree_reader import read_pending
+
+        with SessionLocal() as s:
+            return read_pending(s, client)
+    except Exception:
+        log.exception("reading pedigrees")
+        return None
+    finally:
+        _ped_lock.release()
 
 
 def job_results_for_live_lots():
@@ -140,11 +156,15 @@ scheduler: BackgroundScheduler | None = None
 
 def start() -> BackgroundScheduler:
     global scheduler
+    from datetime import datetime, timedelta
+
     scheduler = BackgroundScheduler(timezone=TZ)
     scheduler.add_job(job_full_refresh, "interval", seconds=settings.full_refresh_seconds, id="full",
                       max_instances=1, coalesce=True, next_run_time=None)
     scheduler.add_job(job_hot_refresh, "interval", seconds=settings.hot_refresh_seconds, id="hot",
                       max_instances=1, coalesce=True)
+    scheduler.add_job(job_read_pedigrees, "interval", minutes=15, id="pedigrees", max_instances=1, coalesce=True,
+                      next_run_time=datetime.now(TZ) + timedelta(minutes=2))
     scheduler.add_job(job_nightly_results, CronTrigger(hour=2, minute=30, timezone=TZ), id="nightly",
                       max_instances=1, coalesce=True)
     scheduler.start()

@@ -298,17 +298,30 @@ def _breeding(lot: Lot, bird: Bird | None, claims, verified, sstat, ctx: Context
                if c.relation in progeny.PARENT_RELATIONS and c.status != "rejected" and c.ring_norm}
     prog = idx.progeny(own_ring)
     sibs = idx.siblings(own_ring, parents)
-    parent_scores = [score_bird(ctx.birds[c.bird_id], ctx).score for c in verified
-                     if c.relation in progeny.PARENT_RELATIONS and c.bird_id in ctx.birds]
+    # Verified ancestors (from listing text or a read pedigree), weighted by generation.
+    anc = [(score_bird(ctx.birds[c.bird_id], ctx).score, pedigree.generation_weight(c.relation))
+           for c in verified if c.bird_id in ctx.birds]
+    parent_scores = [a for a, _ in anc]
+    parent_weights = [w for _, w in anc]
     breeder_rate = None
     if bird is not None and bird.family_key in ctx.family_rate:
         breeder_rate = ctx.family_rate[bird.family_key][0]
     elif sstat is not None and sstat.sold_raced:
         breeder_rate = sstat.ace_rate_shrunk
     own = lot.score if lot.tier == "A" else None
-    out = progeny.breeding_score(prog, sibs, parent_scores, breeder_rate, own, ctx.prefs.get("breeding_weights"))
-    out.update({"progeny": _rec(prog), "siblings": _rec(sibs), "parents_verified": len(parent_scores),
-                "parents_named": len(parents)})
+    out = progeny.breeding_score(prog, sibs, parent_scores, breeder_rate, own, ctx.prefs.get("breeding_weights"),
+                                 parent_weights)
+    named = [c for c in claims if c.status != "rejected"]
+    read = (lot.extra or {}).get("ped_read") or {}
+    out.update({"progeny": _rec(prog), "siblings": _rec(sibs),
+                "parents_verified": sum(1 for c in verified if c.relation in progeny.PARENT_RELATIONS),
+                "ancestors_verified": len(anc), "parents_named": len(parents),
+                # What the listing / pedigree says, shown as claims only — never scored.
+                "pedigree": {"ancestors_named": len(named),
+                             "claimed_aces": sum(1 for c in named if c.claims_ace and c.status == "claimed"),
+                             "read_from": read.get("origin") or ("text" if named else None),
+                             "read_error": read.get("error"),
+                             "has_pedigree": bool(lot.pedigree_url)}})
     return out
 
 

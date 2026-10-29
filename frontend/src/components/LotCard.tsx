@@ -106,24 +106,45 @@ function Conditions({ b }: { b: BirdSummary }) {
 
 const CONF_TEXT: Record<string, string> = { low: "low confidence", medium: "medium confidence", high: "high confidence" };
 
+function PedigreeClaims({ br }: { br: Breeding }) {
+  const p = br.pedigree;
+  if (!p) return null;
+  const how = p.read_from === "ocr" ? "read from the pedigree image" : p.read_from === "pdf" ? "read from the pedigree PDF"
+    : p.read_from === "text" ? "from the listing" : null;
+  if (!p.ancestors_named) {
+    if (p.read_error) return <div className="muted">Pedigree could not be read: {p.read_error}</div>;
+    return p.has_pedigree ? <div className="muted">Pedigree not read yet (read automatically in the background).</div> : null;
+  }
+  return (
+    <div className="muted">
+      Pedigree claims ({how}): {p.ancestors_named} ancestor ring(s), {br.ancestors_verified ?? 0} found in OLR results
+      {p.claimed_aces ? ` · ${p.claimed_aces} described as aces/winners — unverified, not scored` : ""}
+    </div>
+  );
+}
+
 function BreedingBlock({ br }: { br: Breeding }) {
   if (br.score === null || br.confidence === "none") {
     return (
       <div className="breeding small muted">
-        Breeding: no offspring, sibling or verified-parent results yet — {br.parents_named
-          ? `${br.parents_named} parent(s) named, not found in OLR results`
-          : "the listing names no parents"}. Own racing is not used as a breeding score.
+        Breeding: no offspring, sibling or verified-ancestor results yet — {br.pedigree?.ancestors_named
+          ? "none of the named ancestors raced in the downloaded OLR seasons"
+          : "no ancestor rings known"}. Own racing is not used as a breeding score.
+        <PedigreeClaims br={br} />
       </div>
     );
   }
   const rec = (label: string, r?: { n: number; aces: number; mean_long: number } | null) =>
     r ? `${label}: ${r.n} raced, ${r.aces} ace${r.aces === 1 ? "" : "s"}, avg long top ${pct(r.mean_long)}` : null;
+  const others = (br.ancestors_verified ?? 0) - (br.parents_verified ?? 0);
   const parts = [rec("Offspring", br.progeny), rec("Siblings", br.siblings),
-    br.parents_verified ? `${br.parents_verified} parent(s) verified` : null].filter(Boolean);
+    br.parents_verified ? `${br.parents_verified} parent(s) verified` : null,
+    others > 0 ? `${others} other ancestor(s) verified` : null].filter(Boolean);
   return (
     <div className="breeding small">
       <span className="label">Breeding evidence</span> <span className={`badge conf-${br.confidence}`}>{CONF_TEXT[br.confidence]}</span>
       <div className="muted">{parts.join(" · ")}</div>
+      <PedigreeClaims br={br} />
     </div>
   );
 }

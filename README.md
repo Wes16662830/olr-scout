@@ -165,6 +165,20 @@ The card shows two numbers.
 * Settings → Ranking orders Suggestions by either score; the Family Builder
   plans on the breeding score where a lot has one.
 
+### Reading pedigrees for breeding evidence
+
+Every 15 minutes up to 15 pedigree images/PDFs of live lots are read in the
+background (soonest-closing first): PDFs with pypdf, images with Tesseract OCR
+(greyscale, enlarged, digits inside ring numbers cleaned). Ancestor rings found
+become claims; an ancestor counts toward the **breeding** score only when its
+ring is found in OLR results (parents fully, grandparents half, generation
+unknown about a third). Text such as "1st National Ace" is shown as a claim and
+never scored. Images wait while Tesseract is not installed (Windows:
+https://github.com/UB-Mannheim/tesseract/wiki — the app finds it in its default
+folder). Status and a "read now" button are on Pedigree review. Parents usually
+raced 2–4 years before their offspring, so raise *OLR seasons to download* to
+verify them.
+
 ### Combined score (default ranking)
 
 `combined = r × racing + b × breeding`. You choose the racing share (50–100%,

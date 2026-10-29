@@ -25,8 +25,11 @@ function ClaimRow({ c, onSaved }: { c: Claim; onSaved: () => void }) {
   );
 }
 
+type PStatus = { ocr: boolean; message: string; with_pedigree: number; read: number; failed: number; waiting: number; rings_found: number };
+
 export default function PedigreeReview() {
   const { data, reload } = useData<Resp>("/pedigree/review");
+  const st = useData<PStatus>("/pedigree/status", 30_000);
   const [ocr, setOcr] = useState<Record<number, string>>({});
   const [add, setAdd] = useState<Record<number, { ring: string; relation: string }>>({});
   const runOcr = async (id: number) => {
@@ -44,6 +47,15 @@ export default function PedigreeReview() {
     <section>
       <h1>Pedigree review</h1>
       <p className="muted">Ancestor rings read from seller text, PDFs or OCR. Correct and confirm them here; corrections are kept. A claim only counts as verified when the ring is found with a real OLR result.</p>
+      {st.data && (
+        <div className={st.data.ocr ? "panel" : "banner"}>
+          <b>Automatic pedigree reading:</b> {st.data.message}
+          <div className="small">{st.data.with_pedigree} live lots have a pedigree · {st.data.read} read
+            ({st.data.rings_found} ancestor rings found) · {st.data.waiting} waiting · {st.data.failed} could not be read.
+            Up to 15 are read every 15 minutes.</div>
+          <button className="btn ghost small" onClick={async () => { await api.post("/pedigree/read-now"); setTimeout(() => { st.reload(); reload(); }, 3000); }}>Read the next batch now</button>
+        </div>
+      )}
       {data?.unread_pedigrees.length ? (
         <div className="panel"><h2>Pedigrees not read yet</h2>
           <ul>{data.unread_pedigrees.map((p) => (

@@ -95,7 +95,7 @@ class ProgenyIndex:
 
 def breeding_score(progeny: OffspringRecord | None, siblings: OffspringRecord | None,
                    parent_scores: list[float], breeder_rate: float | None, own_racing: float | None,
-                   weights: dict[str, float] | None = None) -> dict:
+                   weights: dict[str, float] | None = None, parent_weights: list[float] | None = None) -> dict:
     """Returns {"score": float|None, "confidence", "components", "used", "missing"}."""
     w = dict(LAYER_WEIGHTS)
     w.update(weights or {})
@@ -105,7 +105,9 @@ def breeding_score(progeny: OffspringRecord | None, siblings: OffspringRecord | 
     if siblings:
         comps["siblings"] = siblings.strength()
     if parent_scores:
-        comps["parents"] = sum(parent_scores) / len(parent_scores) / 100.0
+        # Verified ancestors' own racing; parents count fully, grandparents half, others ~1/3.
+        pw = parent_weights or [1.0] * len(parent_scores)
+        comps["parents"] = sum(sc * w_ for sc, w_ in zip(parent_scores, pw)) / sum(pw) / 100.0
     evidence = bool(comps)  # progeny, siblings or verified parents
     if breeder_rate is not None:
         comps["breeder"] = min(1.0, breeder_rate / FAMILY_CEILING)
@@ -128,7 +130,7 @@ def breeding_score(progeny: OffspringRecord | None, siblings: OffspringRecord | 
     n = (progeny.n if progeny else 0) + (siblings.n if siblings else 0)
     if n >= 8:
         confidence = "high"
-    elif n >= 3 or len(parent_scores) >= 2:
+    elif n >= 3 or sum(1 for w_ in (parent_weights or [1.0] * len(parent_scores)) if w_ >= 1.0) >= 2:
         confidence = "medium"
     else:
         confidence = "low"

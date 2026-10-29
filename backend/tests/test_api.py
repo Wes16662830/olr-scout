@@ -91,13 +91,16 @@ def test_best_race_conditions(session):
 
     from .helpers import make_season
 
-    # 6 races at 100..600 km; the bird is near the top in the 3 slowest races, mid-field in the fast ones.
-    _, birds = make_season(session, "AfrikaPro", 2026, {"ZA-26-100": ("A Lofts", [50, 50, 50, 2, 3, 1])}, pad=10)
-    bird = birds["ZA-26-100"]
+    # 6 races at 100..600 km; the bird is near the top in the slow races, mid-field in the fast ones.
+    _, birds = make_season(session, "AfrikaPro", 2026, {
+        "ZA-26-100": ("A Lofts", [50, 50, 50, 2, 3, 1]),
+        "ZA-26-999": ("Winner Lofts", [1, 1, 1, 1, 1, 1]),  # carries each race's winning speed
+    }, pad=10)
+    bird, winner = birds["ZA-26-100"], birds["ZA-26-999"]
     flights = session.query(Flight).filter(Flight.season_id == bird.season_id).order_by(Flight.id).all()
-    winner_speeds = [1600, 1550, 1500, 1100, 1050, 1000]  # races 4-6 were slow
-    for f, sp in zip(flights, winner_speeds):
-        session.add(BirdResult(bird_id=next(iter(birds.values())).id + 1, flight_id=f.id, position=1, speed=sp))
+    for f, sp in zip(flights, [1600, 1550, 1500, 1100, 1050, 1000]):  # races 4-6 were slow
+        r = session.query(BirdResult).filter_by(bird_id=winner.id, flight_id=f.id).one()
+        r.speed = sp
     session.flush()
     out = bird_summary(session, bird)
     assert out["best_speed"]["best"] == "slow"

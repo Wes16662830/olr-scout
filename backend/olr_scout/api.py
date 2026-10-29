@@ -522,11 +522,24 @@ def edit_claim(claim_id: int, body: dict = Body(...), s: Session = Depends(get_s
     return claim_json(c, s)
 
 
+@protected.get("/pedigree/status")
+def pedigree_status(s: Session = Depends(get_session)):
+    from .pedigree_reader import status
+
+    return status(s)
+
+
+@protected.post("/pedigree/read-now")
+def pedigree_read_now():
+    from .scheduler import job_read_pedigrees
+
+    return _background(job_read_pedigrees)
+
+
 @protected.post("/lots/{lot_id}/ocr")
 def ocr_lot(lot_id: int, s: Session = Depends(get_session)):
     from . import ocr
     from .scheduler import client
-    from .scoring.pedigree import extract_claims
 
     lot = s.get(Lot, lot_id)
     if lot is None or not lot.pedigree_url:
@@ -535,10 +548,9 @@ def ocr_lot(lot_id: int, s: Session = Depends(get_session)):
         text, origin = ocr.text_from_url(client, lot.pedigree_url)
     except Exception as exc:
         raise HTTPException(422, str(exc))
-    lot.extra = {**(lot.extra or {}), "ocr_text": text[:20000]}
-    for cl in extract_claims(text, origin=origin, own_ring=lot.ring_raw):
-        s.add(AncestorClaim(lot_id=lot.id, relation=cl.relation, ring_raw=cl.ring_raw, ring_norm=cl.ring_norm,
-                            name=cl.name, claim_text=cl.text, origin=origin, claims_ace=cl.claims_ace))
+    from .pedigree_reader import store
+
+    store(s, lot, text, origin, None)
     s.flush()
     engine.score_all(s, [lot])
     s.commit()
