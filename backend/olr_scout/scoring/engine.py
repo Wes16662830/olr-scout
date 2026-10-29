@@ -111,22 +111,34 @@ def match_lot(lot: Lot, ctx: Context) -> None:
 # ----------------------------------------------------------------- claims
 
 def refresh_claims(s: Session, lot: Lot, ctx: Context) -> list[AncestorClaim]:
-    """Re-extract text claims (keeping user-confirmed/manual and OCR ones)."""
+    """Re-extract text claims (keeping user-confirmed/manual and OCR ones), then settle who
+    is sire / dam / grandparent (see pedigree.settle_relations)."""
     existing = list(s.scalars(select(AncestorClaim).where(AncestorClaim.lot_id == lot.id)))
     keep = [c for c in existing if c.confirmed_by_user or c.origin in ("manual", "ocr", "pdf")]
     for c in existing:
         if c not in keep:
             s.delete(c)
     kept_rings = {c.ring_norm for c in keep}
+    listed: set[str] = set()
     for c in pedigree.extract_claims(lot.sire and f"Sire: {lot.sire}", lot.dam and f"Dam: {lot.dam}",
                                      lot.pedigree_text, lot.description, lot.performance_claims,
                                      lot.title, own_ring=lot.ring_raw):
         if c.ring_norm in kept_rings:
+            # Also named in the listing: the seller's label for it wins over the chart's.
+            listed.add(c.ring_norm)
+            for k in keep:
+                if k.ring_norm == c.ring_norm and not k.confirmed_by_user and k.origin != "manual" \
+                        and c.relation != "ancestor":
+                    k.relation = c.relation
             continue
         ac = AncestorClaim(lot_id=lot.id, relation=c.relation, ring_raw=c.ring_raw, ring_norm=c.ring_norm,
                            name=c.name, claim_text=c.text, origin=c.origin, claims_ace=c.claims_ace)
         s.add(ac)
         keep.append(ac)
+    # The bird's age from its own ring field or the listing's year — never the title, which
+    # may name a parent ("Son of BE-24-…").
+    own = parse_ring(lot.ring_raw)
+    pedigree.settle_relations(keep, (own.year if own else None) or lot.year, listed)
     for c in keep:
         verify_claim(c, ctx)
     return keep
@@ -225,7 +237,7 @@ def score_lot(s: Session, lot: Lot, ctx: Context, siblings: dict[str, list[Lot]]
     lot.own_lot = preferences.is_own_lot(lot, prefs)
     if claims is None:
         claims = refresh_claims(s, lot, ctx)
-    verified = [c for c in claims if c.status in ("verified", "mismatch") and c.bird_id]
+    verified = [c for c in claims if c.status in ("verified", "mismatch") and c.bird_id and c.relation != "related"]
     lot.claim_mismatch = any(c.status == "mismatch" for c in claims)
     sstat = seller.lookup(s, lot.seller)
     detail: dict = {

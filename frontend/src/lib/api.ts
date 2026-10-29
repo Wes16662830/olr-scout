@@ -113,7 +113,12 @@ export interface Breeding {
 }
 export interface ParentRecord { ring: string; name: string | null; olr: string; season: number; long_score: number | null; is_ace: boolean; breeder: string | null }
 export interface Lineage {
-  parents: { relation: string; ring: string | null; name: string | null; status: string; claims_ace: boolean; record: ParentRecord | null }[];
+  parents: { relation: string; ring: string | null; name: string | null; status: string; claims_ace: boolean;
+    note?: string | null; origin?: string; record: ParentRecord | null }[];
   grandparents: { total: number; verified: number };
+  other_ancestors?: { total: number; verified: number; from_document: number };
+  highlights?: { relation: string; ring: string | null; name: string | null; note: string | null; status: string;
+    claims_ace: boolean; record: ParentRecord | null }[];
+  families?: { name: string; count: number; where: "pedigree" | "listing" | "both" }[];
   pedigree_url: string | null;
 }

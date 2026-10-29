@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from ..rings import find_rings, normalise
+from ..rings import find_rings, normalise, parse_ring
 
 ACE_WORDS = re.compile(
     r"\b(ace|winner|won|1st|first\s+prize|champion|olr\s+winner|top\s*\d{1,2}\b|best\s+bird|super\s+breeder|golden)",
@@ -90,7 +90,63 @@ def extract_claims(*texts: str | None, origin: str = "text", own_ring: str | Non
 
 
 def generation_weight(relation: str) -> float:
-    return {"sire": 1.0, "dam": 1.0, "parent": 1.0, "grandparent": 0.5}.get(relation, 0.35)
+    return {"sire": 1.0, "dam": 1.0, "parent": 1.0, "grandparent": 0.5, "related": 0.0}.get(relation, 0.35)
+
+
+DOCUMENT_ORIGINS = ("pdf", "ocr")
+
+
+def _year(ring_raw: str | None) -> int | None:
+    r = parse_ring(ring_raw) if ring_raw else None
+    return r.year if r else None
+
+
+def settle_relations(claims: list, own_year: int | None, listed: set | None = None) -> None:
+    """Make a lot's claimed lineage possible: at most one sire, one dam, two parents in all
+    and four grandparents. Labels come from the nearest "Sire"/"Dam" word, which on a
+    pedigree chart often belongs to a grandparent, so:
+
+    * user-confirmed and manual claims are never changed and win their role;
+    * the seller's own listing text comes next (the first mention when it names several), also
+      for a document ring the listing names too (``listed``);
+    * a pedigree document (PDF/OCR) is believed only when it gives exactly one candidate;
+    * everything else becomes "ancestor" (generation unknown, low weight);
+    * a ring the same age as the bird or younger cannot be an ancestor ("related", unscored).
+    Mutates ``relation`` on the claim objects (AncestorClaim or Claim-like).
+    """
+    def locked(c) -> bool:
+        return bool(getattr(c, "confirmed_by_user", False)) or getattr(c, "origin", "text") == "manual"
+
+    live = [c for c in claims if getattr(c, "status", None) != "rejected"]
+    for c in live:
+        if locked(c) or own_year is None:
+            continue
+        y = _year(c.ring_raw)
+        if y is not None and y >= own_year:
+            c.relation = "related"
+
+    def settle(role_claims: list, slots: int) -> int:
+        """Keep up to ``slots`` claims, in priority order; demote the rest. Returns slots used."""
+        lock = [c for c in role_claims if locked(c)]
+        from_doc = [c for c in role_claims if not locked(c) and c.origin in DOCUMENT_ORIGINS
+                    and c.ring_norm not in (listed or ())]
+        text = [c for c in role_claims if not locked(c) and c not in from_doc]
+        docs = from_doc
+        keep = lock[:]
+        keep += text[:max(0, slots - len(keep))]
+        free = slots - len(keep)
+        if free > 0 and 0 < len(docs) <= free:
+            keep += docs
+        for c in role_claims:
+            if c not in keep and not locked(c):
+                c.relation = "ancestor"
+        return len(keep)
+
+    used = 0
+    for role in ("sire", "dam"):
+        used += min(1, settle([c for c in live if c.relation == role], 1))
+    settle([c for c in live if c.relation == "parent"], max(0, 2 - used))
+    settle([c for c in live if c.relation == "grandparent"], 4)
 
 
 def is_mismatch(claims_ace: bool, bird_is_ace: bool, best_race_pct: float | None, threshold: float) -> bool:
@@ -100,3 +156,30 @@ def is_mismatch(claims_ace: bool, bird_is_ace: bool, best_race_pct: float | None
     if bird_is_ace:
         return False
     return best_race_pct is None or best_race_pct > threshold
+
+
+
+_LEAD = re.compile(r"^[\s\(\)\-–,:;/|*.]+|[\s\(\)\-–,:;/|*]+$")
+_REL_WORD = re.compile(r"\b(?:sire|dam|father|mother|vader|moeder|s|d)\s*[:\-]?\s*$", re.I)
+
+
+def note_for(claim_text: str | None, ring_raw: str | None, limit: int = 140) -> str | None:
+    """What the pedigree / listing says about one ring: the words after it up to the next
+    ring (or, if nothing follows, the words before it). Seller text, never verified."""
+    if not claim_text or not ring_raw:
+        return None
+    up = claim_text.upper()
+    pos = up.find(ring_raw.upper())
+    if pos < 0:
+        return None
+    spans = sorted((up.find(r.raw.upper()), len(r.raw)) for r in find_rings(claim_text))
+    end = next((p for p, _ in spans if p > pos), len(claim_text))
+    begin = max([p + n for p, n in spans if 0 <= p < pos] or [0])
+    after = _LEAD.sub("", claim_text[pos + len(ring_raw):end])
+    if len(after) < 3:
+        before = _LEAD.sub("", _REL_WORD.sub("", claim_text[begin:pos]))
+        after = before if len(before) >= 3 else ""
+    after = re.sub(r"\s+", " ", after).strip()
+    if not after:
+        return None
+    return after if len(after) <= limit else after[: limit - 1].rstrip() + "…"

@@ -6,7 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import object_session
 
 from .models import AncestorClaim, BidHistory, Bird, Flight
-from .scoring import engine, preferences
+import re
+
+from .scoring import engine, pedigree, preferences
 from .scoring.tier_a import long_flight_ids, FlightIn
 from .util.timeutil import as_aware
 
@@ -103,7 +105,26 @@ def _record(b: Bird | None) -> dict | None:
             "long_score": b.long_score, "is_ace": b.is_ace, "breeder": b.team}
 
 
-def parents(s, lot) -> dict:
+def pedigree_families(lot, prefs: dict | None) -> list[dict]:
+    """Families from the user's list (Settings) named in the pedigree document or the listing,
+    with how often. Only names on that list are recognised."""
+    from .scoring.preferences import SEED_FAMILIES, fold
+
+    fams = (prefs or {}).get("families") or SEED_FAMILIES
+    doc = fold((lot.extra or {}).get("ocr_text"))
+    listing = fold(" \n ".join(x for x in (lot.bloodline, lot.title, lot.description, lot.pedigree_text) if x))
+    out = []
+    for fam in fams:
+        names = [fold(a).strip() for a in [fam["name"], *fam.get("aliases", [])] if a and a.strip()]
+        pat = re.compile(r"(?<![a-z0-9])(?:" + "|".join(re.escape(a) for a in names) + r")(?![a-z0-9])")
+        n_doc, n_list = len(pat.findall(doc)), len(pat.findall(listing))
+        if n_doc or n_list:
+            out.append({"name": fam["name"], "count": n_doc + n_list,
+                        "where": "pedigree" if n_doc and not n_list else "listing" if not n_doc else "both"})
+    return sorted(out, key=lambda f: -f["count"])
+
+
+def parents(s, lot, prefs: dict | None = None) -> dict:
     """Sire/dam from the listing's text or pedigree, each verified against OLR results where possible."""
     claims = s.scalars(select(AncestorClaim).where(AncestorClaim.lot_id == lot.id,
                                                    AncestorClaim.status != "rejected")).all()
@@ -111,16 +132,39 @@ def parents(s, lot) -> dict:
     out = []
     for c in sorted((c for c in claims if c.relation in order), key=lambda c: order[c.relation]):
         out.append({"relation": c.relation, "ring": c.ring_raw, "name": c.name, "status": c.status,
-                    "claims_ace": c.claims_ace, "record": _record(s.get(Bird, c.bird_id) if c.bird_id else None)})
+                    "claims_ace": c.claims_ace, "note": pedigree.note_for(c.claim_text, c.ring_raw),
+                    "origin": c.origin, "record": _record(s.get(Bird, c.bird_id) if c.bird_id else None)})
     have = {p["relation"] for p in out}
     for rel, text in (("sire", lot.sire), ("dam", lot.dam)):
         if text and rel not in have:
             out.append({"relation": rel, "ring": None, "name": text[:80], "status": "claimed", "claims_ace": False,
-                        "record": None})
+                        "note": None, "origin": "text", "record": None})
     grand = [c for c in claims if c.relation == "grandparent"]
+    other = [c for c in claims if c.relation == "ancestor"]
     return {"parents": out, "grandparents": {"total": len(grand),
                                              "verified": sum(c.status in ("verified", "mismatch") for c in grand)},
+            # Rings a pedigree names without saying which generation (or naming several sires/dams).
+            "other_ancestors": {"total": len(other),
+                                "verified": sum(c.status in ("verified", "mismatch") for c in other),
+                                "from_document": sum(c.origin in ("pdf", "ocr") for c in other)},
+            "highlights": _highlights(s, [c for c in claims if c.relation in ("grandparent", "ancestor")]),
+            "families": pedigree_families(lot, prefs),
             "pedigree_url": lot.pedigree_url}
+
+
+def _highlights(s, claims, limit: int = 4) -> list[dict]:
+    """The pedigree's own notes on ancestors (results, "sire of …"), verified ones first."""
+    rows = []
+    for c in claims:
+        note = pedigree.note_for(c.claim_text, c.ring_raw)
+        if not note and not c.claims_ace:
+            continue
+        rows.append({"relation": c.relation, "ring": c.ring_raw, "name": c.name, "note": note,
+                     "status": c.status, "claims_ace": c.claims_ace,
+                     "record": _record(s.get(Bird, c.bird_id) if c.bird_id else None)})
+    rows.sort(key=lambda r: (r["status"] not in ("verified", "mismatch"), not r["claims_ace"],
+                             r["relation"] != "grandparent"))
+    return rows[:limit]
 
 
 def last_bid(s, lot) -> dict | None:
@@ -174,7 +218,7 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
     sess = object_session(lot)
     if sess is not None:
         card["bird"] = bird_summary(sess, lot.bird) if (tier == "A" and lot.bird is not None) else None
-        card["lineage"] = parents(sess, lot)
+        card["lineage"] = parents(sess, lot, prefs)
         card["last_bid"] = last_bid(sess, lot)
         from .mybids import my_bid
 

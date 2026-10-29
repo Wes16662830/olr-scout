@@ -181,10 +181,33 @@ function Parents({ l }: { l: Lineage }) {
           ) : (
             p.ring && <span className="muted"> not in OLR results</span>
           )}
+          {p.note && <div className="muted ped-note">“{p.note}” <i>— {p.origin === "text" ? "listing" : "pedigree"}, seller's words</i></div>}
         </div>
       ))}
+      {l.families && l.families.length > 0 && (
+        <div className="small"><span className="label">Families named:</span>{" "}
+          {l.families.map((f) => `${f.name}${f.count > 1 ? ` ×${f.count}` : ""}`).join(", ")}
+          <span className="muted"> (seller's claim{l.families.every((f) => f.where === "pedigree") ? ", from the pedigree" : ""})</span></div>
+      )}
+      {l.highlights && l.highlights.length > 0 && (
+        <div className="small">
+          <span className="label">From the pedigree:</span>
+          {l.highlights.map((h, i) => (
+            <div key={i} className="ped-note">
+              {h.relation === "grandparent" ? "Grandparent" : "Ancestor"} <b>{h.ring}</b>{h.name ? ` “${h.name}”` : ""}
+              {h.note ? ` — ${h.note}` : ""}{" "}
+              {h.record
+                ? <span className="badge st-verified">raced: {h.record.olr} {h.record.season}{h.record.is_ace ? ", ACE" : ""}{h.record.long_score !== null ? `, long top ${pct(h.record.long_score)}` : ""}</span>
+                : <span className="badge st-claimed">not checked</span>}
+            </div>
+          ))}
+        </div>
+      )}
       {l.grandparents.total > 0 && (
         <div className="small muted">Grandparents named: {l.grandparents.total} ({l.grandparents.verified} verified in OLR results)</div>
+      )}
+      {l.other_ancestors && l.other_ancestors.total > 0 && (
+        <div className="small muted">Other ancestors in the pedigree (generation unknown): {l.other_ancestors.total} ({l.other_ancestors.verified} verified in OLR results)</div>
       )}
       {l.parents.length > 0 && l.pedigree_url && (
         <div className="small"><a href={l.pedigree_url} target="_blank" rel="noopener noreferrer">Pedigree ↗</a></div>

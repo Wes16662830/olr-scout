@@ -91,7 +91,7 @@ def _lot_ancestry(s: Session, lot: Lot) -> tuple[set, set, list[str]]:
             gen1.add(k)
     for c in s.scalars(select(AncestorClaim).where(AncestorClaim.lot_id == lot.id, AncestorClaim.status != "rejected")):
         k = _key(c.ring_raw) or _key(c.name)
-        if not k:
+        if not k or c.relation == "related":
             continue
         (gen1 if c.relation in ("sire", "dam", "parent") else gen2).add(k)
         if c.status in ("verified", "mismatch") and c.bird_id:
