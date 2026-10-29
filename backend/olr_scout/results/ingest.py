@@ -21,7 +21,7 @@ PROGRESS: dict = {}
 
 # Bump when ingest stores new data, so seasons downloaded by older versions are fetched
 # again once (2: per-bird speed for the speed-vs-winner measure).
-DATA_VERSION = 2
+DATA_VERSION = 3  # 3: races were cut off at 1,000 rows before
 
 # Editable in Settings → OLR registry. Seasons: year → Benzing season id.
 SEED_REGISTRY = [
@@ -59,6 +59,10 @@ def seed_registry(s: Session) -> None:
         for year, sid in entry["seasons"].items():
             if s.get(Season, sid) is None:
                 s.add(Season(id=sid, olr_id=olr.id, year=year))
+    s.flush()
+    for olr in s.scalars(select(Olr)):
+        if not (olr.name or "").strip() and not olr.seasons:
+            s.delete(olr)  # left by an older Save OLR that accepted an empty name
     s.flush()
     reset_empty_seasons(s)
 
@@ -366,6 +370,7 @@ def ingest_all(s: Session, src: ResultsSource, olr_names: list[str] | None = Non
     olrs = s.scalars(select(Olr).where(Olr.enabled.is_(True))).all()
     if olr_names:
         olrs = [o for o in olrs if o.name in olr_names]
+    olrs = [o for o in olrs if (o.name or "").strip()]
     not_found = [o.name for o in olrs if not o.loft_id]
     for name in not_found:
         report["errors"].append(f"{name}: not found in the results site's loft list — set its loft id in Settings")

@@ -128,6 +128,20 @@ if first_race:
         rws, _ = _rows(res)
         if len(rws) > 1:
             say("Second row: " + short(rws[1]))
+    say("\nPaging check (race results): what the site returns for pages 1 and 2")
+    for per in (1000, 100):
+        for page in (1, 2):
+            try:
+                d = client.get_json(f"{base}/api/search/v1/public/flights/{first_race.id}/results/final",
+                                    params={"page": page, "search": "", "paginationPerPage": per,
+                                            "onlyUserPigeons": "false"}, use_cache=False)
+                a = d.get("all_flight_results", d) if isinstance(d, dict) else {}
+                rws, tot = _rows(d)
+                first_ring = (rws[0].get("pigeon") or {}).get("ring_description") if rws and isinstance(rws[0], dict) else None
+                say(f"  per {per}, page {page}: {len(rws)} rows · first {first_ring} · total {tot} · "
+                    f"per_page {a.get('per_page')} · last_page {a.get('last_page')} · next {a.get('next_page_url')}")
+            except Exception as exc:
+                say(f"  per {per}, page {page}: FAILED {exc}")
     try:
         import olr_scout.results.benzing as bzmod
 

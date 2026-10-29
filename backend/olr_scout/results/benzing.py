@@ -24,6 +24,7 @@ from .base import (
     SeasonInfo,
     TeamEntry,
 )
+from ..rings import normalise as normalise_ring
 from .nuxt import find_seasons, payload_from_html, seasons_from_nuxt2
 
 log = logging.getLogger(__name__)
@@ -195,62 +196,95 @@ class BenzingResultsSource(ResultsSource):
         return out
 
     # ----------------------------------------------------------------- results
+    def _row(self, r: dict) -> ResultRow | None:
+        ring = _ring_of(r)
+        if not ring:
+            return None
+        team = _get(r, "team_name", "pigeon_team.name", "team.name", "pigeon.pigeon_team.name",
+                    "pigeon.team.name", "pigeon.team_name", "teamName", "fancier_name", "fancierName",
+                    "user.name", "owner", "loftName", "pigeon.teamName")
+        if isinstance(team, dict):
+            team = team.get("name")
+        return ResultRow(
+            ring_raw=ring,
+            position=_int(_get(r, "arrival_order", "position", "place", "rank", "pos", "ranking", "rank_position")),
+            team=str(team).strip() if team else None,
+            name=_get(r, "pigeon_name", "pigeonName", "pigeon.name", "name"),
+            speed=_float(_get(r, "speed", "velocity", "speed_mpm")),
+            sex=_get(r, "sex", "gender", "pigeon.sex", "pigeon.gender"),
+            colour=_get(r, "color", "colour", "pigeon.color", "pigeon.colour"),
+            team_country=_get(r, "pigeon.pigeon_team.country", "pigeon_team.country", "team.country", "country"),
+        )
+
     def flight_results(self, flight_id: int) -> FlightResults:
-        rows: list[ResultRow] = []
+        """All result rows of one race.
+
+        The site's paging cannot be trusted to end correctly (seen live: 1,000 rows
+        returned of a reported 1,875, with paging that stopped there). So rows are
+        collected until the reported total is reached, trying in turn: numbered pages
+        of PAGE_SIZE, numbered pages of 100, then the site's own next-page links.
+        A method is abandoned as soon as a page adds no new rows."""
+        url = f"{self.base}/api/search/v1/public/flights/{flight_id}/results/final"
+        got: dict[tuple, ResultRow] = {}
         total: int | None = None
-        page = 1
-        prev_first = None
-        while True:
-            params = {"page": page, "search": "", "paginationPerPage": PAGE_SIZE, "onlyUserPigeons": "false"}
-            data = self._get_with_backoff(f"{self.base}/api/search/v1/public/flights/{flight_id}/results/final", params)
+        next_url: str | None = None
+        used: list[str] = []
+
+        def take(data) -> tuple[int, object]:
+            """Store new rows; returns (rows added, identity of this page's first row)."""
+            nonlocal total, next_url
             batch, t = _rows(data)
-            total = t if t is not None else total
-            first = repr(batch[0]) if batch else None
-            if page > 1 and first == prev_first:
-                self.mismatches.append(f"flight {flight_id}: page {page} repeated page {page - 1}; stopped")
-                break  # the API ignored the page number — stop instead of looping
-            prev_first = first
+            if t is not None:
+                total = t
+            nu = _get(data, "all_flight_results.next_page_url", "next_page_url") if isinstance(data, dict) else None
+            next_url = nu if isinstance(nu, str) and nu else None
+            added = 0
             for r in batch:
-                ring = _ring_of(r)
-                if not ring:
+                row = self._row(r)
+                if row is None:
                     continue
-                team = _get(r, "team_name", "pigeon_team.name", "team.name", "pigeon.pigeon_team.name",
-                            "pigeon.team.name", "pigeon.team_name", "teamName", "fancier_name", "fancierName",
-                            "user.name", "owner", "loftName", "pigeon.teamName")
-                if isinstance(team, dict):
-                    team = team.get("name")
-                rows.append(
-                    ResultRow(
-                        ring_raw=ring,
-                        position=_int(_get(r, "arrival_order", "position", "place", "rank", "pos", "ranking",
-                                           "rank_position")),
-                        team=str(team).strip() if team else None,
-                        name=_get(r, "pigeon_name", "pigeonName", "pigeon.name", "name"),
-                        speed=_float(_get(r, "speed", "velocity", "speed_mpm")),
-                        sex=_get(r, "sex", "gender", "pigeon.sex", "pigeon.gender"),
-                        colour=_get(r, "color", "colour", "pigeon.color", "pigeon.colour"),
-                        team_country=_get(r, "pigeon.pigeon_team.country", "pigeon_team.country", "team.country",
-                                          "country"),
-                    )
-                )
-            last = _last_page(data)
-            if not batch or (total is not None and len(rows) >= total):
+                key = (normalise_ring(row.ring_raw), row.position)
+                if key not in got:
+                    got[key] = row
+                    added += 1
+            return added, (repr(batch[0]) if batch else None)
+
+        def complete() -> bool:
+            return total is not None and len(got) >= total
+
+        for per in (PAGE_SIZE, 100):
+            if complete():
                 break
-            if last is not None:
-                if page >= last:
-                    break
-            elif len(batch) < PAGE_SIZE:
+            used.append(f"pages of {per}")
+            page, prev = 1, None
+            while page <= 500:
+                params = {"page": page, "search": "", "paginationPerPage": per, "onlyUserPigeons": "false"}
+                added, first = take(self._get_with_backoff(url, params))
+                if complete() or first is None or (page > 1 and first == prev):
+                    break  # done, an empty page, or the same page again (page number ignored)
+                if total is None and added < per:
+                    break  # no total reported: a short page is the last one
+                prev = first
+                page += 1
+            if total is None:
                 break
-            page += 1
-            if page > 500:
-                break
-        complete = total is None or len(rows) == total
+        hops, seen_urls = 0, set()
+        while not complete() and next_url and next_url not in seen_urls and hops < 500:
+            if "next page links" not in used:
+                used.append("next page links")
+            seen_urls.add(next_url)
+            hops += 1
+            take(self._get_with_backoff(next_url, None))  # None: keep the link's own query string
+        rows = sorted(got.values(), key=lambda r: (r.position is None, r.position or 0))
+        done = total is None or len(rows) >= total
         note = ""
-        if total is not None and len(rows) != total:
-            note = f"flight {flight_id}: got {len(rows)} rows, API total {total}"
+        if not done:
+            note = f"flight {flight_id}: got {len(rows)} rows, API total {total} (tried {', '.join(used)})"
             self.mismatches.append(note)
             log.warning("results mismatch: %s", note)
-        return FlightResults(flight_id, rows, total, complete, note)
+        elif len(used) > 1:
+            log.info("flight %s complete via %s", flight_id, used[-1])
+        return FlightResults(flight_id, rows, total, done, note)
 
     def _get_with_backoff(self, url: str, params: dict, tries: int = 4):
         delay = 2.0

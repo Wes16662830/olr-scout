@@ -44,3 +44,18 @@ def test_new_entry_needs_a_name_and_saves_seasons(session, api):
     session.expire_all()
     o = session.scalar(select(Olr).where(Olr.name == "Cape Town Winter Aces"))
     assert o.loft_id == 323 and o.enabled and [x.id for x in o.seasons] == [4001]
+
+
+def test_nameless_entries_are_removed_and_ignored(session, client):
+    from olr_scout.results.benzing import BenzingResultsSource
+    from olr_scout.results.ingest import ingest_all, seed_registry
+
+    session.add(Olr(name="", enabled=True))
+    session.commit()
+    seed_registry(session)
+    session.commit()
+    assert session.scalar(select(Olr).where(Olr.name == "")) is None
+    session.add(Olr(name="   ", enabled=True, loft_id=None))
+    session.commit()
+    report = ingest_all(session, BenzingResultsSource(client, sleep=lambda s: None), keep=1)
+    assert not any(e.startswith(":") or e.startswith("   :") for e in report["errors"])

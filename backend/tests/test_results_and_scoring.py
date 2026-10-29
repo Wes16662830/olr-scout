@@ -199,7 +199,7 @@ def test_results_ignoring_page_number_does_not_loop(client, web):
     finally:
         bz.PAGE_SIZE = 1000
     assert len(fr.rows) == 3 and not fr.complete
-    assert any("repeated" in m for m in src.mismatches)
+    assert any("got 3 rows, API total 999" in m for m in src.mismatches)
 
 
 def test_live_flight_list_shape(client):
@@ -334,3 +334,70 @@ def test_ingest_holds_no_database_lock_while_downloading(tmp_path, client):
     s.close()
     assert not blocked
     assert db.SessionLocal().query(Bird).count() == 40
+
+
+
+def _live_like(web, fid, n, *, cap, wrong_last_page=False, page_works_up_to=None, next_links=False):
+    """A results endpoint that misbehaves like the live one can."""
+    import httpx
+    from urllib.parse import parse_qs
+
+    rows = [{"arrival_order": i, "pigeon": {"ring_description": f"ZA-26-{500000 + i}",
+                                           "pigeon_team": {"name": "T"}}} for i in range(1, n + 1)]
+    base = f"https://oneloftrace.live/api/search/v1/public/flights/{fid}/results/final"
+
+    def h(req):
+        q = parse_qs(req.url.query.decode())
+        page = int(q.get("page", ["1"])[0])
+        per = min(int(q.get("paginationPerPage", ["15"])[0]), cap)
+        if page_works_up_to is not None and per > page_works_up_to:
+            page = 1  # the page number is ignored for big pages
+        if "cursor" in q:  # the site's own next-page links carry their position
+            page = int(q["cursor"][0])
+        chunk = rows[(page - 1) * per: page * per]
+        last = 1 if wrong_last_page else max(1, -(-n // per))
+        nxt = f"{base}?cursor={page + 1}&paginationPerPage={per}" if next_links and page * per < n else None
+        return httpx.Response(200, json={"all_flight_results": {"current_page": page, "data": chunk, "per_page": per,
+                                                                  "last_page": last, "total": n,
+                                                                  "next_page_url": nxt}})
+
+    web.add(base, h)
+
+
+def test_capped_pages_with_wrong_last_page_still_complete(client, web):
+    """Live symptom: 1,000 rows of 1,875 — the site capped the page and said it was the last."""
+    import olr_scout.results.benzing as bz
+
+    _live_like(web, 9001, 47, cap=20, wrong_last_page=True)
+    bz.PAGE_SIZE = 25
+    try:
+        fr = BenzingResultsSource(client, sleep=lambda s: None).flight_results(9001)
+    finally:
+        bz.PAGE_SIZE = 1000
+    assert fr.complete and len(fr.rows) == 47 and fr.rows[-1].position == 47
+
+
+def test_falls_back_to_small_pages_when_page_numbers_are_ignored(client, web):
+    import olr_scout.results.benzing as bz
+
+    _live_like(web, 9002, 230, cap=150, page_works_up_to=100)
+    bz.PAGE_SIZE = 150
+    try:
+        src = BenzingResultsSource(client, sleep=lambda s: None)
+        fr = src.flight_results(9002)
+    finally:
+        bz.PAGE_SIZE = 1000
+    assert fr.complete and len(fr.rows) == 230 and not src.mismatches
+
+
+def test_follows_next_page_links_as_a_last_resort(client, web):
+    import olr_scout.results.benzing as bz
+
+    # Numbered pages never advance, but the site's own next-page links do.
+    _live_like(web, 9003, 60, cap=40, page_works_up_to=0, next_links=True)
+    bz.PAGE_SIZE = 40
+    try:
+        fr = BenzingResultsSource(client, sleep=lambda s: None).flight_results(9003)
+    finally:
+        bz.PAGE_SIZE = 1000
+    assert len(fr.rows) == 60 and fr.complete
