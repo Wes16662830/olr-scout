@@ -47,9 +47,21 @@ function chipClass(pct: number | null): string {
   return "chip-mid";
 }
 
-function BirdBlock({ b, seller }: { b: BirdSummary; seller: string | null }) {
+function BirdBlock({ b, seller, lot }: { b: BirdSummary; seller: string | null; lot: Lot }) {
+  const same = (x: string | null) => (x || "").toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/(?<=[A-Z])0+(?=\d)/g, "");
+  const differs = lot.ring && same(lot.ring) !== same(b.ring);
   return (
     <div className="bird">
+      <div className="small">
+        Race results for ring <b>{b.ring}</b> ({b.olr} {b.season})
+        {lot.match_confidence === "manual" && <span className="muted"> · matched by you</span>}
+      </div>
+      {(lot.match_confidence === "fuzzy" || (differs && lot.match_confidence !== "manual")) && (
+        <div className="warnline small">
+          Loose match: the lot says <b>{lot.ring}</b>. If this is not the same bird, open the lot and choose
+          “No results for this bird”.
+        </div>
+      )}
       <div className="bird-line">
         {b.name && <b>“{b.name}” </b>}
         {[b.colour && `colour ${b.colour}`, b.sex].filter(Boolean).join(" · ")}
@@ -257,7 +269,7 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
           </div>
         </div>
       </div>
-      {lot.bird && <BirdBlock b={lot.bird} seller={lot.seller} />}
+      {lot.bird && <BirdBlock b={lot.bird} seller={lot.seller} lot={lot} />}
       {lot.lineage && <Parents l={lot.lineage} />}
       {lot.breeding && <BreedingBlock br={lot.breeding} />}
       <div className="facts">

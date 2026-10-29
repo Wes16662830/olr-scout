@@ -78,12 +78,18 @@ def match_lot(lot: Lot, ctx: Context) -> None:
         p = parse_ring(c.ring_raw)
         if p and c.relation != "ancestor":
             ancestors.add(p.canonical)
+    # Loose (fuzzy) matches only within the OLR the lot's auction belongs to; an exact
+    # ring match may come from any OLR (same ring = same bird).
+    allowed = None
+    if lot.olr_tag:
+        allowed = {b.id for b in ctx.birds.values() if b.season.olr.name == lot.olr_tag}
     res = ctx.index.match(
         lot.ring_raw,
         [lot.title],
         year=lot.year,
         override_bird_id=lot.override_bird_id,
         exclude=ancestors,
+        fuzzy_allowed=allowed,
     )
     # Prefer the season of the OLR the lot refers to when a ring raced in several.
     if res.bird_id and res.confidence != "manual":

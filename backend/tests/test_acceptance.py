@@ -202,3 +202,17 @@ def test_auction_with_no_suggestions_still_listed_with_reasons(session):
     assert sum(dino["hidden"].values()) == 2
     assert any("Tier D" in k for k in dino["hidden"]) and any("Tier C is switched off" in k for k in dino["hidden"])
     assert over["AfrikaPro Auction"]["suggested"] == 1
+
+
+def test_dinokeng_lot_does_not_borrow_another_olrs_bird(session):
+    """Live bug (Lot 28, Dinokeng Auction 2): ZA 22 CRU 173 showed an AfrikaPro 2023 bird's results."""
+    make_season(session, "AfrikaPro", 2023, {"ZA-22-RVN-173": ("Loft Einkamerer", GOOD)})
+    make_season(session, "Dinokeng", 2023, {"ZA-22-CRU-174": ("Dino Lofts", GOOD)})
+    lot = make_lot(session, 28, auction_name="Dinokeng Auction 2", olr_tag="Dinokeng",
+                   ring_raw="ZA 22 CRU 173", current_bid=1000, description="Sire: ZA 17 28333")
+    short = make_lot(session, 29, source="elite", auction_name="Dinokeng Auction 2", olr_tag="Dinokeng",
+                     ring_raw="174 CRU", year=2022, current_bid=1000)
+    session.flush()
+    engine.score_all(session)
+    assert lot.bird_id is None and lot.match_confidence == "none"
+    assert short.match_confidence == "fuzzy" and short.bird.ring_raw == "ZA-22-CRU-174"

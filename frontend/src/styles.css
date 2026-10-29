@@ -125,3 +125,4 @@ tr.mine-bid td { background: rgba(180, 83, 9, .08); }
 .mybid.bid { background: #dbeafe; color: #1e3a8a; }
 .linklike { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }
 input.narrow { width: 90px; }
+.warnline { background: #fef3c7; color: #78350f; padding: 3px 6px; border-radius: 4px; }

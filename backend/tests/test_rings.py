@@ -45,8 +45,23 @@ def test_match_order():
     assert (m.bird_id, m.confidence) == (1, "contains")
     m = idx.match("9822 OERF", [], year=2026)
     assert (m.bird_id, m.confidence) == (2, "fuzzy")
-    # Ambiguous fuzzy (two clubs share the number, no club given) → none + candidates
+    # No club on the lot ring: never a loose match against rings that have one
     m = idx.match("ZA 26 5000", [])
-    assert m.confidence == "none" and m.candidates == [4, 5]
+    assert m.confidence == "none" and m.candidates == []
     assert idx.match("9822 OERF", [], year=2024).confidence == "none"
     assert idx.match("XX", [], override_bird_id=4).confidence == "manual"
+
+
+def test_loose_match_needs_the_same_club_and_olr():
+    """Live bug: lot ZA 22 CRU 173 was matched to another bird numbered 173."""
+    idx = RingIndex([
+        ResultRing(1, normalise("ZA-22-RVN-173"), "ZA-22-RVN-173"),   # same number, other club
+        ResultRing(2, normalise("ZA-22-0173"), "ZA-22-0173"),         # no club at all
+        ResultRing(3, normalise("ZA-21-CRU-173"), "ZA-21-CRU-173"),   # other year
+    ])
+    assert idx.match("ZA 22 CRU 173", []).bird_id is None
+    idx = RingIndex([ResultRing(7, normalise("ZA-22-CRU-0173"), "ZA-22-CRU-0173")])
+    assert idx.match("ZA 22 CRU 173", []).bird_id == 7  # same bird written with a leading zero → exact
+    # Elite-style short ring: a loose match is allowed only among the lot's own OLR birds.
+    assert idx.match("173 CRU", [], year=2022, fuzzy_allowed={7}).bird_id == 7
+    assert idx.match("173 CRU", [], year=2022, fuzzy_allowed={9}).bird_id is None

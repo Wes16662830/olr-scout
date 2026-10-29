@@ -204,6 +204,7 @@ class RingIndex:
         override_bird_id: int | None = None,
         fuzzy_texts: list[str | None] | None = None,
         exclude: set[str] | None = None,
+        fuzzy_allowed: set[int] | None = None,
     ) -> MatchResult:
         """``haystacks`` must only hold text that names the bird itself (title, ring
         field) — never pedigree prose, or a parent's ring would match as the lot's.
@@ -241,24 +242,25 @@ class RingIndex:
                 if parsed:
                     break
         if parsed and parsed.number_int is not None:
+            # A loose match must agree on everything both rings state: year (known on both),
+            # club (present on both — a ring without a club never loosely matches one with
+            # one) and country. ``fuzzy_allowed`` limits it to the lot's own OLR.
             cands = []
+            y = parsed.year or year
             for r in self.by_number.get(parsed.number_int, []):
                 p = r.parsed
-                if not p:
+                if not p or not y or not p.year or y != p.year:
                     continue
-                y = parsed.year or year
-                if y and p.year and y != p.year:
-                    continue
-                if parsed.club and p.club and parsed.club != p.club:
+                if not parsed.club or not p.club or parsed.club != p.club:
                     continue
                 if parsed.country and p.country and parsed.country != p.country:
                     continue
-                if not (parsed.club or parsed.country) and not y:
+                if fuzzy_allowed is not None and r.bird_id not in fuzzy_allowed:
                     continue
                 cands.append(r.bird_id)
             cands = sorted(set(cands))
             if len(cands) == 1:
-                return MatchResult(cands[0], "fuzzy", note="matched on year + number + club/country")
+                return MatchResult(cands[0], "fuzzy", note="loose match: same year, club and number, ring written differently")
             if cands:
                 return MatchResult(None, "none", cands, "ambiguous fuzzy match")
         return MatchResult(None, "none")
