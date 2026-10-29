@@ -29,27 +29,48 @@ class SourceUnavailable(Exception):
     """Network failure or 5xx after retries."""
 
 
+# Text that only appears on a challenge / block page itself.
 CHALLENGE_MARKERS = (
-    "cf-chl",
-    "challenge-platform",
-    "cf-turnstile",
-    "turnstile",
-    "just a moment...",
-    "attention required! | cloudflare",
+    "<title>just a moment",
     "cf_chl_opt",
+    "cf-chl-widget",
+    "attention required! | cloudflare",
+    "checking your browser before accessing",
+    "verify you are human",
 )
+# Text that can also sit on a normal page: Cloudflare adds a "challenge-platform" script to
+# ordinary pages and sites embed a Turnstile widget on their own login forms. Only counted
+# as a challenge when the status code is a refusal (403/429/503).
+WEAK_MARKERS = ("challenge-platform", "cf-turnstile", "turnstile", "just a moment")
+
+
+def challenge_evidence(resp: httpx.Response) -> str | None:
+    """Why this response is a bot challenge / block, or None if it is a normal answer."""
+    refused = resp.status_code in (403, 429, 503)
+    cf = "cloudflare" in resp.headers.get("server", "").lower() or "cf-ray" in resp.headers
+    if resp.headers.get("cf-mitigated", "").lower() == "challenge":
+        return "Cloudflare challenge (cf-mitigated header)"
+    ctype = resp.headers.get("content-type", "")
+    head = resp.text[:6000].lower() if ("html" in ctype or not ctype) else ""
+    strong = next((m for m in CHALLENGE_MARKERS if m in head), None)
+    if strong:
+        return f"challenge page ({strong!r})"
+    if refused:
+        weak = next((m for m in WEAK_MARKERS if m in head), None)
+        if weak:
+            return f"challenge page ({weak!r})"
+        if cf:
+            return "refused by Cloudflare"
+    return None
 
 
 def looks_like_challenge(resp: httpx.Response) -> bool:
-    if resp.status_code in (403, 429, 503) and (
-        "cloudflare" in resp.headers.get("server", "").lower() or "cf-ray" in resp.headers
-    ):
-        return True
-    ctype = resp.headers.get("content-type", "")
-    if "html" in ctype or not ctype:
-        head = resp.text[:6000].lower()
-        return any(m in head for m in CHALLENGE_MARKERS)
-    return False
+    return challenge_evidence(resp) is not None
+
+
+def _server(resp: httpx.Response) -> str:
+    sv = resp.headers.get("server", "")
+    return f", server {sv}" if sv else ""
 
 
 @dataclass
@@ -124,10 +145,13 @@ class PoliteClient:
                     attempt += 1
                     self._sleep(2**attempt)
                     continue
-                if looks_like_challenge(resp):
-                    raise SourceBlocked(f"{host}: bot challenge / block (HTTP {resp.status_code})")
+                why = challenge_evidence(resp)
+                if why:
+                    raise SourceBlocked(f"{host}: {why}, HTTP {resp.status_code}{_server(resp)} — "
+                                        f"{urlsplit(url).path or '/'}")
                 if resp.status_code in (401, 403):
-                    raise SourceBlocked(f"{host}: HTTP {resp.status_code}")
+                    raise SourceBlocked(f"{host}: HTTP {resp.status_code}{_server(resp)} (access refused) — "
+                                        f"{urlsplit(url).path or '/'}")
                 if resp.status_code == 429:
                     raise SourceBlocked(f"{host}: rate limited (HTTP 429)")
                 if resp.status_code >= 500 and attempt < self._retries:

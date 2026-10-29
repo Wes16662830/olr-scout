@@ -164,3 +164,40 @@ def test_pedigree_link_ignores_other_lots_on_the_page():
     assert page.ends_at is None  # the related lot's end time is not taken
     no_hint = parse_product_page(html, "https://x.co")
     assert "9999" not in no_hint.pedigree_url and "sidebar" not in no_hint.pedigree_url
+
+
+def test_normal_pages_with_cloudflare_scripts_are_not_challenges():
+    """Elite showed 'bot challenge (HTTP 200)': Cloudflare's beacon script and a Turnstile
+    widget on a login form sit on ordinary pages. A real challenge is a refusal or a
+    challenge page."""
+    import httpx
+
+    from olr_scout.util.http import challenge_evidence
+
+    html = {"content-type": "text/html"}
+    normal = ('<html><head><title>Elite Pigeon Auctions</title>'
+              '<script src="/cdn-cgi/challenge-platform/scripts/jsd/main.js"></script>'
+              '<script src="https://challenges.cloudflare.com/turnstile/v0/api.js"></script></head>'
+              '<body><div class="cf-turnstile"></div></body></html>')
+    assert challenge_evidence(httpx.Response(200, text=normal, headers=html)) is None
+    assert challenge_evidence(httpx.Response(403, text=normal, headers=html))  # refused + widget
+    page = "<html><head><title>Just a moment...</title></head><script>window._cf_chl_opt={}</script></html>"
+    assert challenge_evidence(httpx.Response(200, text=page, headers=html))
+    assert challenge_evidence(httpx.Response(403, text="", headers={"cf-mitigated": "challenge"}))
+    assert challenge_evidence(httpx.Response(403, text="denied", headers={"server": "cloudflare"})) == \
+        "refused by Cloudflare"
+    assert challenge_evidence(httpx.Response(200, text='{"ok": true}', headers={"content-type": "application/json"})) is None
+
+
+def test_blocked_message_says_what_was_seen(web):
+    import httpx
+
+    from olr_scout.util.http import PoliteClient
+
+    def handler(req):
+        return httpx.Response(403, text="Forbidden", headers={"server": "nginx"})
+
+    c = PoliteClient(transport=httpx.MockTransport(handler), min_interval=0, sleep=lambda _: None)
+    with pytest.raises(SourceBlocked) as e:
+        c.get("https://afripigeon.com/api/auctions/active")
+    assert str(e.value) == "afripigeon.com: HTTP 403, server nginx (access refused) — /api/auctions/active"

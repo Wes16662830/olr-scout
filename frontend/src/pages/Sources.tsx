@@ -65,6 +65,12 @@ export default function Sources() {
               {s.key === "benzing" && ingestText(s.progress) && <div className="small">⏳ {ingestText(s.progress)}</div>}</td>
             <td>{s.lot_count}</td><td>{when(s.last_run)}</td><td>{when(s.last_success)}</td>
             <td className="small">{s.message}
+              {/blocked|refused|challenge/i.test(s.message || "") && (
+                <div className="muted">The site turned the app away, so this source is paused (the app does not get round
+                  bot protection). If the site opens normally in your browser, it blocks automated readers: ask the site
+                  to allow “OLRScout” in its firewall, and put your email in OLR_SCOUT_CONTACT in the .env file so they
+                  can see who it is. It is retried at the next full refresh.</div>
+              )}
               {s.detail && Object.keys(s.detail).length > 0 && <details><summary>detail</summary><pre className="ocr">{JSON.stringify(s.detail, null, 2)}</pre></details>}</td>
             <td><button className="btn ghost" onClick={() => run("/sources/refresh", { only: [s.key] }, `Refresh ${s.key}`)} disabled={s.key === "benzing"}>Run</button></td>
           </tr>
