@@ -19,6 +19,8 @@ header nav a { padding: 6px 10px; border-radius: 6px; text-decoration: none; col
 header nav a.active { background: var(--accent); color: #fff; }
 .bell { text-decoration: none; position: relative; }
 .bell b { background: var(--bad); color: #fff; border-radius: 9px; font-size: 11px; padding: 0 5px; margin-left: 2px; }
+.search input { width: 190px; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: inherit; }
+@media (max-width: 640px) { .search input { width: 130px; } }
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
 h1 { margin: 4px 0 8px; font-size: 22px; } h2 { font-size: 17px; margin: 18px 0 8px; } h2.group { color: var(--muted); }
 .muted { color: var(--muted); } .small { font-size: 12.5px; }

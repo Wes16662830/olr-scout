@@ -72,6 +72,22 @@ function get(path: string): unknown {
     const data = snap.get["/families?min_entries=1&limit=300"] as { families: { entries: number; seasons: { olr: string }[] }[] };
     return { ...data, families: data.families.filter((f) => f.entries >= min && (!olr || f.seasons.some((s) => s.olr === olr))) };
   }
+  if (base === "/search") {
+    // Same rules as the backend, on the snapshot's cards (no pedigree-ring search here).
+    const raw = (q.get("q") || "").trim();
+    const m = raw.match(/^(?:lot\s*(?:no\.?|nr\.?|#)?\s*)?#?(\d{1,4})$/i);
+    const norm = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const words = !m && raw.length >= 3 && /[a-z]/i.test(raw) ? raw.toLowerCase() : null;
+    return allLots().flatMap((l) => {
+      const why: string[] = [];
+      const ring = String(l.ring || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+      if (m && l.lot_no === Number(m[1])) why.push("lot number");
+      if (norm.replace(/\D/g, "").length >= 3 && ring.includes(norm)) why.push("bird's ring");
+      if (words && String(l.seller || "").toLowerCase().includes(words)) why.push("seller / breeder");
+      if (words && !why.length && `${l.title} ${l.bloodline || ""}`.toLowerCase().includes(words)) why.push("mentioned in the listing");
+      return why.length ? [{ ...l, found_by: why }] : [];
+    });
+  }
   if (base === "/settings") return store.read("settings", snap.get["/settings"]);
   if (base === "/inventory") return store.read("inventory", snap.get["/inventory"]);
   if (base === "/closing") return shift(snap.get["/closing?hours=24"]);

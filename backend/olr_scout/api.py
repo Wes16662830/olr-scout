@@ -118,6 +118,15 @@ def list_lots(s: Session = Depends(get_session), status: str = "live", source: s
     return [lot_card(l, prefs) for l in s.scalars(stmt)]
 
 
+@protected.get("/search")
+def search_lots(q: str = "", s: Session = Depends(get_session)):
+    """Lots by lot number, ring or breeder — live lots first, then closed ones (newest first)."""
+    from .search import WHY, search
+
+    prefs = preferences.load(s)
+    return [lot_card(l, prefs, {"found_by": [WHY[w][1] for w in why]}) for l, why in search(s, q)]
+
+
 @protected.get("/closing")
 def closing_soon(s: Session = Depends(get_session), hours: int = 24):
     prefs = preferences.load(s)
