@@ -116,3 +116,11 @@ tr.mine-bid td { background: rgba(180, 83, 9, .08); }
 .score.combined { font-size: 22px; }
 .score.sub { font-size: 14px; font-weight: 700; }
 .conditions { color: var(--text); }
+.card.mine-leading { border: 2px solid var(--good); }
+.card.mine-outbid { border: 2px solid var(--bad); }
+.card.mine-bid { border: 2px solid var(--b); }
+.mybid { font-size: 13px; font-weight: 700; padding: 5px 8px; border-radius: 6px; margin-bottom: 8px; }
+.mybid.leading { background: #dcfce7; color: #14532d; }
+.mybid.outbid { background: #fee2e2; color: #991b1b; }
+.mybid.bid { background: #dbeafe; color: #1e3a8a; }
+.linklike { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; padding: 0; }

@@ -59,17 +59,16 @@ def auctions(s: Session) -> list[dict]:
 
 
 def _yours(s: Session, lots: list[Lot], prefs: dict) -> dict[int, str]:
-    names = {fold(n) for n in prefs.get("own", {}).get("usernames", []) if n}
-    if not names:
-        return {}
     out = {}
     for lot in lots:
-        if lot.winner and fold(lot.winner) in names:
+        if lot.winner and preferences.bidder_match(lot.winner, prefs):
             out[lot.id] = "won" if lot.sale_status == "sold" else "bid"  # top bid on an unsold lot is not a win
+        elif (lot.extra or {}).get("my_bid"):
+            out[lot.id] = "bid"
     bidders = s.execute(select(BidHistory.lot_id, BidHistory.bidder).where(
         BidHistory.lot_id.in_([l.id for l in lots])))
     for lot_id, bidder in bidders:
-        if bidder and fold(bidder) in names and lot_id not in out:
+        if lot_id not in out and preferences.bidder_match(bidder, prefs):
             out[lot_id] = "bid"
     return out
 

@@ -315,6 +315,7 @@ class Watch(Base):
     near_max_within: Mapped[int | None] = mapped_column(Integer)  # R; None = use global buffer
     closes_in: Mapped[list] = mapped_column(JSON, default=lambda: [30, 10])  # minutes
     above_max: Mapped[bool] = mapped_column(Boolean, default=True)
+    auto: Mapped[bool | None] = mapped_column(Boolean)  # added because you bid on the lot
     lot = relationship("Lot")
 
 

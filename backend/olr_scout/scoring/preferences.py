@@ -156,6 +156,33 @@ def is_own_lot(lot, prefs: dict) -> bool:
     return any(fold(n) and fold(n) in hay for n in own.get("team_names", []))
 
 
+def _squash(text: str | None) -> str:
+    return re.sub(r"\s+", "", fold(text))
+
+
+def bidder_match(shown: str | None, prefs: dict) -> str | None:
+    """Is a bidder name, as the site shows it, one of your usernames?
+
+    "exact": same name (case, accents and spaces ignored).
+    "masked": the site hides letters (e.g. "G********X", "ge***tx") and the visible
+    letters fit your name — probably you, but another bidder could fit too."""
+    if not shown:
+        return None
+    names = [n for n in prefs.get("own", {}).get("usernames", []) if n]
+    seen = _squash(shown)
+    for n in names:
+        if seen == _squash(n):
+            return "exact"
+    if "*" in seen:
+        visible = seen.replace("*", "")
+        if len(visible) < 2:
+            return None  # "****" or "g***": too little to go on
+        pattern = "^" + ".*".join(re.escape(p) for p in re.split(r"\*+", seen)) + "$"
+        for n in names:
+            if re.match(pattern, _squash(n)):
+                return "masked"
+    return None
+
+
 def user_is_leading(lot, prefs: dict) -> bool:
-    names = {fold(n) for n in prefs.get("own", {}).get("usernames", [])}
-    return bool(lot.leading_bidder and fold(lot.leading_bidder) in names)
+    return bidder_match(lot.leading_bidder, prefs) is not None

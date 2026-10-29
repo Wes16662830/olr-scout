@@ -176,6 +176,9 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
         card["bird"] = bird_summary(sess, lot.bird) if (tier == "A" and lot.bird is not None) else None
         card["lineage"] = parents(sess, lot)
         card["last_bid"] = last_bid(sess, lot)
+        from .mybids import my_bid
+
+        card["my_bid"] = my_bid(sess, lot, prefs)
         card["bird_name"] = (card["bird"] or {}).get("name") or (lot.extra or {}).get("bird_name")
     if extra:
         card.update(extra)

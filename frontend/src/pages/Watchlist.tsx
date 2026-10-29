@@ -5,7 +5,7 @@ import { when } from "../lib/format";
 import { useData } from "../lib/useData";
 import { enablePush } from "../push";
 
-type W = { watch: { id: number; near_max_within: number | null; closes_in: number[]; above_max: boolean }; lot: Lot };
+type W = { watch: { id: number; near_max_within: number | null; closes_in: number[]; above_max: boolean; auto?: boolean }; lot: Lot };
 type A = { id: number; lot_id: number; kind: string; message: string; at: string; read: boolean };
 
 export default function Watchlist() {
@@ -23,10 +23,11 @@ export default function Watchlist() {
         <button className="btn ghost" onClick={async () => setPushMsg(await enablePush())}>Enable phone notifications</button>
         <span className="muted">{pushMsg}</span>
       </div>
-      {wl.data?.length === 0 && <p>Nothing watched yet. Tap “Watch” on a lot.</p>}
+      {wl.data?.length === 0 && <p>Nothing watched yet. Tap “Watch” on a lot — lots you bid on are added automatically.</p>}
       {wl.data?.map((w) => (
         <div key={w.watch.id} className="watch">
-          <LotCard lot={w.lot} />
+          {w.watch.auto && <div className="small muted">Added automatically because you bid on it.</div>}
+          <LotCard lot={w.lot} onWatch={wl.reload} />
           <div className="rules row wrap">
             <label>Warn within R
               <input type="number" value={w.watch.near_max_within ?? ""} placeholder="global"

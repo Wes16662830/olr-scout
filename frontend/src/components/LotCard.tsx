@@ -160,6 +160,28 @@ function Parents({ l }: { l: Lineage }) {
   );
 }
 
+function MyBid({ lot, onChange }: { lot: Lot; onChange?: () => void }) {
+  const m = lot.my_bid;
+  if (!m) return null;
+  const probably = m.match === "masked" ? " (probably you — the site masks names)" : "";
+  if (m.status === "leading") {
+    return <div className="mybid leading">✔ You lead{m.your_max ? ` · ${zar(m.your_max)}` : ""}{probably}</div>;
+  }
+  if (m.status === "outbid") {
+    return (
+      <div className="mybid outbid">
+        ✖ Outbid{m.your_max ? ` — your ${zar(m.your_max)}` : ""} · now {zar(m.top)}{m.top_bidder ? ` by ${m.top_bidder}` : ""}{probably}
+      </div>
+    );
+  }
+  return (
+    <div className="mybid bid">
+      You bid on this (marked by hand){" "}
+      <button className="linklike" onClick={async () => { await api.post(`/lots/${lot.id}/mybid`, { on: false }); onChange?.(); }}>undo</button>
+    </div>
+  );
+}
+
 export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => void }) {
   const p = lot.performance as Record<string, unknown> | null;
   const watch = async () => {
@@ -167,7 +189,8 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
     onWatch?.();
   };
   return (
-    <article className={`card ${lot.claim_mismatch ? "mismatch" : ""}`}>
+    <article className={`card ${lot.claim_mismatch ? "mismatch" : ""} ${lot.my_bid ? `mine-${lot.my_bid.status}` : ""}`}>
+      <MyBid lot={lot} onChange={onWatch} />
       {lot.claim_mismatch && <div className="redflag">⚠ Claim mismatch: the text says ace/winner but the verified result is mid-field.</div>}
       {lot.lot_no !== null && (
         <div className="lot-head">
@@ -237,6 +260,15 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
       <div className="row actions">
         <a className="btn" href={lot.url} target="_blank" rel="noopener noreferrer">Open lot ↗</a>
         <button className="btn ghost" onClick={watch}>Watch</button>
+        {!lot.my_bid && (
+          <button className="btn ghost" title="For sites that don't show bidder names: marks your bid and watches the lot"
+            onClick={async () => {
+              const v = window.prompt("Your bid on this lot (R) — leave empty if unsure:", lot.current_bid ? String(lot.current_bid) : "");
+              if (v === null) return;
+              await api.post(`/lots/${lot.id}/mybid`, { on: true, amount: v ? Number(v.replace(/[^0-9]/g, "")) || null : null });
+              onWatch?.();
+            }}>I bid on this</button>
+        )}
       </div>
     </article>
   );

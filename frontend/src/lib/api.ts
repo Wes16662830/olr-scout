@@ -82,6 +82,8 @@ export interface LotCard {
   breeding_score?: number | null;
   breeding?: Breeding | null;
   combined?: { score: number | null; racing_share: number | null; breeding_share: number | null; basis: string } | null;
+  my_bid?: { status: "leading" | "outbid" | "bid"; your_max: number | null; match: "exact" | "masked" | "manual";
+    top: number | null; top_bidder: string | null } | null;
   last_bid?: { amount: number; bidder: string | null; at: string | null; count: number | null; bidder_shown: boolean } | null;
   bird?: BirdSummary | null;
   lineage?: Lineage;

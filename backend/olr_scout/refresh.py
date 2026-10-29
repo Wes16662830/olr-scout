@@ -267,6 +267,9 @@ def refresh_all(s: Session, sources: dict[str, AuctionSource], only: list[str] |
     reports = run_sources(s, chosen)
     seller.recompute(s)
     engine.score_all(s)
+    from .mybids import auto_watch
+
+    auto_watch(s)
     alerts.evaluate(s)
     purge_raw(s)
     s.commit()
@@ -342,6 +345,9 @@ def hot_refresh(s: Session, sources: dict[str, AuctionSource]) -> int:
                     row.extra = {**(row.extra or {}), "final_read_note": f"lot page not readable after closing ({error})"}
     if done:
         engine.score_all(s, done)
+        from .mybids import auto_watch
+
+        auto_watch(s)
         alerts.evaluate(s)
     s.commit()
     return len(done)

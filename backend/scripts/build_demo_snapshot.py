@@ -79,7 +79,7 @@ def seed(s) -> None:
     from olr_scout.models import BidHistory
 
     for i, lot in enumerate(s.scalars(select(Lot).where(Lot.source == "demo").order_by(Lot.id)).all()[:4]):
-        for j, who in enumerate(["b***r", "pigeonman", "GeForce RTX" if i == 1 else "k***p"]):
+        for j, who in enumerate(["b***r", "GeForce RTX" if i == 2 else "pigeonman", "GeForce RTX" if i == 1 else "k***p"]):
             s.add(BidHistory(lot_id=lot.id, bidder=who, amount=(lot.current_bid or 500) - (2 - j) * 100,
                              at=now_utc() - timedelta(hours=3 - j)))
         lot.bid_count = 3
@@ -101,6 +101,10 @@ def seed(s) -> None:
         settle(lot)
     s.commit()
     engine.score_all(s)
+    from olr_scout.mybids import auto_watch
+
+    auto_watch(s)
+    s.commit()
     first = s.scalar(select(Lot).where(Lot.source == "demo").order_by(Lot.id))
     s.add(Watch(lot_id=first.id))
     s.add(Alert(lot_id=first.id, kind="closing", dedupe="30", message=f"DEMO {first.auction_name} · Lot {first.lot_no} closes in 25 min"))

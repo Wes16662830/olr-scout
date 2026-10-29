@@ -232,15 +232,42 @@ def unwatch(lot_id: int, s: Session = Depends(get_session)):
     w = s.scalar(select(Watch).where(Watch.lot_id == lot_id))
     if w:
         s.delete(w)
-        s.commit()
+    lot = s.get(Lot, lot_id)
+    if lot is not None:  # don't add it back automatically just because you bid on it
+        lot.extra = {**(lot.extra or {}), "auto_watch_dismissed": True}
+    s.commit()
     return {"ok": True}
+
+
+@protected.post("/lots/{lot_id}/mybid")
+def mark_my_bid(lot_id: int, body: dict = Body(default={}), s: Session = Depends(get_session)):
+    """For sites that show no bidder names: {"on": true, "amount": 3500} marks your bid."""
+    lot = s.get(Lot, lot_id)
+    if lot is None:
+        raise HTTPException(404)
+    extra = dict(lot.extra or {})
+    if body.get("on", True):
+        extra["my_bid"] = True
+        if body.get("amount"):
+            extra["my_bid_amount"] = int(body["amount"])
+        extra.pop("auto_watch_dismissed", None)
+    else:
+        extra.pop("my_bid", None)
+        extra.pop("my_bid_amount", None)
+    lot.extra = extra
+    s.flush()
+    from .mybids import auto_watch
+
+    auto_watch(s)
+    s.commit()
+    return lot_detail(lot_id, s)
 
 
 @protected.get("/watchlist")
 def watchlist(s: Session = Depends(get_session)):
     prefs = preferences.load(s)
     return [{"watch": {"id": w.id, "near_max_within": w.near_max_within, "closes_in": w.closes_in,
-                       "above_max": w.above_max}, "lot": lot_card(w.lot, prefs)}
+                       "above_max": w.above_max, "auto": bool(w.auto)}, "lot": lot_card(w.lot, prefs)}
             for w in s.scalars(select(Watch)) if w.lot]
 
 

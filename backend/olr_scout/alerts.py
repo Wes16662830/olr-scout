@@ -50,6 +50,16 @@ def evaluate(s: Session) -> list[Alert]:
         limit = preferences.lot_max(lot, lot.family_tags or [], prefs)
         price = lot.current_bid if lot.current_bid is not None else lot.starting_bid
         label = _lot_label(lot)
+        from .mybids import my_bid
+
+        mine = my_bid(s, lot, prefs)
+        if mine and mine["status"] == "outbid" and mine["top"]:
+            who = f" by {mine['top_bidder']}" if mine.get("top_bidder") else ""
+            yours = f" (your bid {format_zar(mine['your_max'])})" if mine.get("your_max") else ""
+            a = _add(s, lot, "outbid", str(mine["top"]),
+                     f"Outbid on {label}: now {format_zar(mine['top'])}{who}{yours} — your max {format_zar(limit)}")
+            if a:
+                new.append(a)
         ends = as_aware(lot.ends_at)
         if ends:
             mins = (ends - now).total_seconds() / 60
