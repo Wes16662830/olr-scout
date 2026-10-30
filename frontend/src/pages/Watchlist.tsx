@@ -8,6 +8,14 @@ import { enablePush } from "../push";
 type W = { watch: { id: number; near_max_within: number | null; closes_in: number[]; above_max: boolean; auto?: boolean }; lot: Lot };
 type A = { id: number; lot_id: number; kind: string; message: string; at: string; read: boolean };
 
+// The server sends these in this order: leading, outbid, other live lots, closed.
+const GROUP_TEXT = { leading: "You're leading", outbid: "Outbid", live: "Watching", closed: "Closed" };
+function group(w: W): keyof typeof GROUP_TEXT {
+  if (!["live", "upcoming"].includes(w.lot.status)) return "closed";
+  const st = w.lot.my_bid?.status;
+  return st === "leading" ? "leading" : st === "outbid" ? "outbid" : "live";
+}
+
 export default function Watchlist() {
   const wl = useData<W[]>("/watchlist", 30_000);
   const al = useData<A[]>("/alerts", 30_000);
@@ -24,8 +32,9 @@ export default function Watchlist() {
         <span className="muted">{pushMsg}</span>
       </div>
       {wl.data?.length === 0 && <p>Nothing watched yet. Tap “Watch” on a lot — lots you bid on are added automatically.</p>}
-      {wl.data?.map((w) => (
+      {wl.data?.map((w, i) => (
         <div key={w.watch.id} className="watch">
+          {group(w) !== (i > 0 ? group(wl.data![i - 1]) : null) && <h2 className="watch-group">{GROUP_TEXT[group(w)]}</h2>}
           {w.watch.auto && <div className="small muted">Added automatically because you bid on it.</div>}
           <LotCard lot={w.lot} onWatch={wl.reload} />
           <div className="rules row wrap">

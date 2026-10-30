@@ -51,6 +51,13 @@ type LotCard = { id: number; [k: string]: unknown };
 const allLots = () => shift(snap.get["/lots?status=all"] as LotCard[]);
 const watched = () => store.read<number[]>("watch", ((snap.get["/watchlist"] as { lot: LotCard }[]) || []).map((w) => w.lot.id));
 
+// Same order as the backend: leading, outbid, other live lots, closed.
+function watchRank(l: LotCard): number {
+  if (l.status !== "live" && l.status !== "upcoming") return 3;
+  const st = (l.my_bid as { status?: string } | null)?.status;
+  return st === "leading" ? 0 : st === "outbid" ? 1 : 2;
+}
+
 function get(path: string): unknown {
   const [base, query = ""] = path.split("?");
   const q = new URLSearchParams(query);
@@ -59,7 +66,7 @@ function get(path: string): unknown {
     return watched().flatMap((id, i) => {
       const lot = lots.find((l) => l.id === id);
       return lot ? [{ watch: { id: i + 1, near_max_within: null, closes_in: [30, 10], above_max: true }, lot }] : [];
-    });
+    }).sort((a, b) => watchRank(a.lot) - watchRank(b.lot) || String(a.lot.ends_at).localeCompare(String(b.lot.ends_at)));
   }
   if (base === "/alerts") {
     const read = store.read<boolean>("alerts-read", false);

@@ -274,10 +274,18 @@ def mark_my_bid(lot_id: int, body: dict = Body(default={}), s: Session = Depends
 
 @protected.get("/watchlist")
 def watchlist(s: Session = Depends(get_session)):
+    """Live lots you lead first, then ones you were outbid on, then the rest by closing time;
+    closed lots last (latest first)."""
     prefs = preferences.load(s)
-    return [{"watch": {"id": w.id, "near_max_within": w.near_max_within, "closes_in": w.closes_in,
+    rows = [{"watch": {"id": w.id, "near_max_within": w.near_max_within, "closes_in": w.closes_in,
                        "above_max": w.above_max, "auto": bool(w.auto)}, "lot": lot_card(w.lot, prefs)}
             for w in s.scalars(select(Watch)) if w.lot]
+    live = [r for r in rows if r["lot"].get("status") in ("live", "upcoming")]
+    done = [r for r in rows if r not in live]
+    rank = {"leading": 0, "outbid": 1}
+    live.sort(key=lambda r: (rank.get((r["lot"].get("my_bid") or {}).get("status"), 2), r["lot"].get("ends_at") or "9999"))
+    done.sort(key=lambda r: r["lot"].get("ends_at") or "", reverse=True)
+    return live + done
 
 
 @protected.get("/alerts")

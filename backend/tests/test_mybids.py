@@ -86,3 +86,35 @@ def test_manual_mark_for_sites_without_names(session):
     session.commit()
     session.expire_all()
     assert my_bid(session, lot, preferences.load(session))["status"] == "outbid"
+
+
+def test_watchlist_puts_lots_you_lead_on_top(session, client):
+    from fastapi.testclient import TestClient
+
+    from olr_scout.api import create_app
+
+    s = preferences.load(session)
+    s["own"] = {"usernames": ["GeForce RTX"]}
+    preferences.save(session, s)
+    soon = make_lot(session, 1, current_bid=900, ends_at=now_utc() + timedelta(minutes=20))
+    _bids(session, soon, [("b***r", 900)])  # not yours, closes first
+    outbid = make_lot(session, 2, current_bid=3800, ends_at=now_utc() + timedelta(hours=1))
+    _bids(session, outbid, [("GeForce RTX", 3500), ("b***r", 3800)])
+    late = make_lot(session, 3, current_bid=2000, ends_at=now_utc() + timedelta(hours=9))
+    _bids(session, late, [("GeForce RTX", 2000)])
+    early = make_lot(session, 4, current_bid=1500, ends_at=now_utc() + timedelta(hours=2))
+    _bids(session, early, [("GeForce RTX", 1500)])
+    stale = make_lot(session, 5, current_bid=1700, ends_at=now_utc() + timedelta(hours=1))
+    _bids(session, stale, [("GeForce RTX", 1500)])  # price moved on since the history was read
+    closed = make_lot(session, 6, status="closed", ends_at=now_utc() - timedelta(hours=1))
+    for lot in (soon, closed):
+        session.add(Watch(lot_id=lot.id))
+    auto_watch(session)
+    session.commit()
+    api = TestClient(create_app(start_scheduler=False))
+    api.post("/api/login", json={"password": "test-password"})
+    rows = api.get("/api/watchlist").json()
+    # leading (closing soonest first), outbid, the rest by closing time, closed last
+    assert [r["lot"]["lot_no"] for r in rows] == [4, 3, 2, 1, 5, 6]
+    assert [r["lot"]["my_bid"]["status"] for r in rows[:3]] == ["leading", "leading", "outbid"]
+    assert next(r for r in rows if r["lot"]["lot_no"] == 5)["lot"]["my_bid"]["status"] == "bid"

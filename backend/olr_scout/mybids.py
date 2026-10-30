@@ -29,6 +29,9 @@ def my_bid(s: Session, lot: Lot, prefs: dict) -> dict | None:
         match = "exact" if any(m == "exact" for _, m in mine) else "masked"
         leading = top is not None and preferences.bidder_match(top.bidder, prefs) is not None
         status = "leading" if leading else "outbid"
+        # The listing's price moved past the history we hold: someone bid since — not known who.
+        if leading and lot.current_bid is not None and top.amount is not None and lot.current_bid > top.amount:
+            status = "bid"
     else:
         your_max = (lot.extra or {}).get("my_bid_amount")
         match = "manual"
