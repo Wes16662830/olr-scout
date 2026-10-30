@@ -49,7 +49,9 @@ export default function Watchlist() {
                 closes in {m} min</label>
             ))}
             <label><input type="checkbox" checked={w.watch.above_max} onChange={(e) => save(w, { above_max: e.target.checked })} /> price above max</label>
-            <button className="btn ghost" onClick={async () => { await api.del(`/lots/${w.lot.id}/watch`); wl.reload(); }}>Remove</button>
+            {group(w) === "leading"
+              ? <span className="small muted">You're leading — stays on your watchlist until you're outbid or it closes.</span>
+              : <button className="btn ghost" onClick={async () => { await api.del(`/lots/${w.lot.id}/watch`); wl.reload(); }}>Remove</button>}
           </div>
         </div>
       ))}

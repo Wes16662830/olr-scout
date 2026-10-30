@@ -117,6 +117,8 @@ export async function demoRequest<T>(method: string, path: string, body?: unknow
   const watchMatch = path.match(/^\/lots\/(\d+)\/watch$/);
   if (watchMatch) {
     const id = Number(watchMatch[1]);
+    const lot = allLots().find((l) => l.id === id);
+    if (method === "DELETE" && lot && watchRank(lot) === 0) throw new Error("You're leading on this lot, so it stays on your watchlist.");
     const w = watched().filter((x) => x !== id);
     store.write("watch", method === "DELETE" ? w : [...w, id]);
     return { ok: true } as T;

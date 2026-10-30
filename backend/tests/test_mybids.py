@@ -54,21 +54,34 @@ def test_leading_outbid_and_auto_watch(session):
     assert not [a for a in alerts.evaluate(session) if a.kind == "outbid"]  # once per new top bid
 
 
-def test_removed_auto_watch_stays_removed(session, client):
+def test_lot_you_lead_cannot_be_removed_but_an_outbid_one_can(session, client):
     from fastapi.testclient import TestClient
 
     from olr_scout.api import create_app
 
-    lot = make_lot(session, 58, current_bid=3500)
-    _bids(session, lot, [("GeForce RTX", 3500)])
+    lead = make_lot(session, 58, current_bid=3500)
+    _bids(session, lead, [("GeForce RTX", 3500)])
+    outbid = make_lot(session, 59, current_bid=3800)
+    _bids(session, outbid, [("GeForce RTX", 3500), ("b***r", 3800)])
     auto_watch(session)
     session.commit()
     api = TestClient(create_app(start_scheduler=False))
     api.post("/api/login", json={"password": "test-password"})
-    assert api.delete(f"/api/lots/{lot.id}/watch").status_code == 200
+    r = api.delete(f"/api/lots/{lead.id}/watch")
+    assert r.status_code == 409 and "leading" in r.json()["detail"]
+    assert api.delete(f"/api/lots/{outbid.id}/watch").status_code == 200
     session.expire_all()
-    assert auto_watch(session) == 0
-    assert session.scalar(select(Watch).where(Watch.lot_id == lot.id)) is None
+    assert auto_watch(session) == 0  # the outbid one stays removed
+    assert {w.lot_id for w in session.scalars(select(Watch))} == {lead.id}
+    # Take the lead again on the removed lot: it comes back.
+    _bids(session, outbid, [("GeForce RTX", 4000)])
+    outbid.current_bid = 4000
+    assert auto_watch(session) == 1
+    # Once outbid, the lead lot can be removed.
+    _bids(session, lead, [("b***r", 3600)])
+    lead.current_bid = 3600
+    session.commit()
+    assert api.delete(f"/api/lots/{lead.id}/watch").status_code == 200
 
 
 def test_manual_mark_for_sites_without_names(session):

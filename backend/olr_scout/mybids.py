@@ -44,16 +44,28 @@ def my_bid(s: Session, lot: Lot, prefs: dict) -> dict | None:
             "top": top_amount, "top_bidder": top_bidder}
 
 
+LIVE = ("live", "upcoming")
+
+
+def is_leading(s: Session, lot: Lot, prefs: dict) -> bool:
+    return lot.status in LIVE and (my_bid(s, lot, prefs) or {}).get("status") == "leading"
+
+
 def auto_watch(s: Session, prefs: dict | None = None) -> int:
-    """Put every live lot you bid on in the watchlist (unless you removed it)."""
+    """Put every live lot you bid on in the watchlist. One you removed stays removed — unless
+    you are leading on it: those are always watched."""
     prefs = prefs or preferences.load(s)
     watched = {w.lot_id for w in s.scalars(select(Watch))}
     added = 0
-    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")))):
-        if lot.id in watched or (lot.extra or {}).get("auto_watch_dismissed"):
+    for lot in s.scalars(select(Lot).where(Lot.status.in_(LIVE))):
+        if lot.id in watched:
             continue
-        if my_bid(s, lot, prefs) is not None:
-            s.add(Watch(lot_id=lot.id, auto=True))
-            added += 1
+        mine = my_bid(s, lot, prefs)
+        if mine is None:
+            continue
+        if (lot.extra or {}).get("auto_watch_dismissed") and mine["status"] != "leading":
+            continue
+        s.add(Watch(lot_id=lot.id, auto=True))
+        added += 1
     s.flush()
     return added

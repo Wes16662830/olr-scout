@@ -238,10 +238,15 @@ def watch(lot_id: int, body: dict = Body(default={}), s: Session = Depends(get_s
 
 @protected.delete("/lots/{lot_id}/watch")
 def unwatch(lot_id: int, s: Session = Depends(get_session)):
+    from .mybids import is_leading
+
+    lot = s.get(Lot, lot_id)
+    if lot is not None and is_leading(s, lot, preferences.load(s)):
+        raise HTTPException(409, "You're leading on this lot, so it stays on your watchlist until you're "
+                                 "outbid or the auction closes.")
     w = s.scalar(select(Watch).where(Watch.lot_id == lot_id))
     if w:
         s.delete(w)
-    lot = s.get(Lot, lot_id)
     if lot is not None:  # don't add it back automatically just because you bid on it
         lot.extra = {**(lot.extra or {}), "auto_watch_dismissed": True}
     s.commit()
