@@ -9,7 +9,7 @@ type W = { watch: { id: number; near_max_within: number | null; closes_in: numbe
 type A = { id: number; lot_id: number; kind: string; message: string; at: string; read: boolean };
 
 // The server sends these in this order: leading, outbid, other live lots, closed.
-const GROUP_TEXT = { leading: "You're leading", outbid: "Outbid", live: "Watching", closed: "Closed" };
+const GROUP_TEXT = { leading: "You're leading", outbid: "Outbid", live: "Watching", closed: "Closed in the last day (then removed — see Results)" };
 function group(w: W): keyof typeof GROUP_TEXT {
   if (!["live", "upcoming"].includes(w.lot.status)) return "closed";
   const st = w.lot.my_bid?.status;

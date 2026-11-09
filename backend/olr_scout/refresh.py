@@ -13,7 +13,7 @@ import threading
 import traceback
 from datetime import timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import and_, delete, or_, select
 from sqlalchemy.orm import Session
 
 from . import alerts
@@ -62,6 +62,10 @@ def upsert_lot(s: Session, lot: Lot) -> LotRow:
         row.detail_fetched_at = lot.fetched_at
         lot.extra = {**(lot.extra or {}), "detail_version": DETAIL_VERSION}
     row.extra = {**(row.extra or {}), **(lot.extra or {})}
+    if row.status in ("live", "upcoming") and row.closed_at is not None:
+        # The site shows it running again (extended, or closed early by close_stale).
+        row.closed_at = row.final_price = row.winner = row.sale_status = row.sale_note = None
+        row.extra = {k: v for k, v in row.extra.items() if k != "closed_note"}
     s.flush()
     if lot.bids:
         known = {(b.bidder, b.amount, as_aware(b.at)) for b in row.bids}
@@ -100,6 +104,27 @@ def settle(row: LotRow) -> None:
     else:
         row.sale_status = "sold"
         row.sale_note = None if row.reserve_met else "reserve not shown"
+
+
+STALE_AFTER = timedelta(hours=1)  # past its closing time and not re-read since
+NOT_SEEN_AFTER = timedelta(days=3)  # no closing time and not seen on the site since
+
+
+def close_stale(s: Session) -> int:
+    """Close lots the sites could not confirm: past their closing time by an hour, or (with
+    no closing time) not seen for days. A blocked site or a failing auction otherwise left
+    them "live" for good. Reversible: a later read that shows the lot live reopens it."""
+    now = now_utc()
+    rows = s.scalars(select(LotRow).where(LotRow.status.in_(("live", "upcoming")), or_(
+        and_(LotRow.ends_at.is_not(None), LotRow.ends_at < now - STALE_AFTER),
+        and_(LotRow.ends_at.is_(None), LotRow.fetched_at < now - NOT_SEEN_AFTER)))).all()
+    for row in rows:
+        row.status = "closed"
+        settle(row)
+        row.extra = {**(row.extra or {}),
+                     "closed_note": "closed by the app: its closing time passed and the site was not re-read, "
+                                    "so the price shown is the last one seen"}
+    return len(rows)
 
 
 def upsert_auction(s: Session, a: Auction, results_link: bool) -> None:
@@ -265,6 +290,7 @@ def run_sources(s: Session, sources: list[AuctionSource]) -> list[dict]:
 def refresh_all(s: Session, sources: dict[str, AuctionSource], only: list[str] | None = None) -> list[dict]:
     chosen = [src for key, src in sources.items() if not only or key in only]
     reports = run_sources(s, chosen)
+    close_stale(s)
     seller.recompute(s)
     engine.score_all(s)
     from .mybids import auto_watch
@@ -295,6 +321,12 @@ def hot_refresh(s: Session, sources: dict[str, AuctionSource]) -> int:
     All pages are fetched before anything is written, so the database is never
     locked while waiting on a site."""
     now = now_utc()
+    if close_stale(s):
+        s.commit()
+    from .mybids import prune_watchlist
+
+    if prune_watchlist(s):
+        s.commit()
     soon = now + timedelta(minutes=settings.hot_window_minutes)
     hot = s.scalars(select(LotRow).where(LotRow.status == "live", LotRow.ends_at.is_not(None),
                                          LotRow.ends_at <= soon, LotRow.ends_at >= now - timedelta(minutes=2))).all()

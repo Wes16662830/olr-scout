@@ -119,12 +119,20 @@ def list_lots(s: Session = Depends(get_session), status: str = "live", source: s
 
 
 @protected.get("/search")
-def search_lots(q: str = "", s: Session = Depends(get_session)):
-    """Lots by lot number, ring or breeder — live lots first, then closed ones (newest first)."""
+def search_lots(q: str = "", closed: bool = False, s: Session = Depends(get_session)):
+    """Lots by lot number, ring or breeder: running auctions only, unless ``closed`` (then
+    closed lots too, after the running ones). ``closed_count`` says how many were left out."""
+    from .refresh import close_stale
     from .search import WHY, search
 
+    if close_stale(s):
+        s.commit()
     prefs = preferences.load(s)
-    return [lot_card(l, prefs, {"found_by": [WHY[w][1] for w in why]}) for l, why in search(s, q)]
+    hits = search(s, q, limit=500)
+    live = [(l, why) for l, why in hits if l.status in ("live", "upcoming")]
+    shown = hits if closed else live
+    return {"lots": [lot_card(l, prefs, {"found_by": [WHY[w][1] for w in why]}) for l, why in shown],
+            "closed_count": len(hits) - len(live)}
 
 
 @protected.get("/closing")
@@ -281,6 +289,11 @@ def mark_my_bid(lot_id: int, body: dict = Body(default={}), s: Session = Depends
 def watchlist(s: Session = Depends(get_session)):
     """Live lots you lead first, then ones you were outbid on, then the rest by closing time;
     closed lots last (latest first)."""
+    from .mybids import prune_watchlist
+    from .refresh import close_stale
+
+    if close_stale(s) + prune_watchlist(s):
+        s.commit()
     prefs = preferences.load(s)
     rows = [{"watch": {"id": w.id, "near_max_within": w.near_max_within, "closes_in": w.closes_in,
                        "above_max": w.above_max, "auto": bool(w.auto)}, "lot": lot_card(w.lot, prefs)}

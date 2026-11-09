@@ -62,7 +62,8 @@ function get(path: string): unknown {
   const [base, query = ""] = path.split("?");
   const q = new URLSearchParams(query);
   if (base === "/watchlist") {
-    const lots = allLots();
+    const dayAgo = Date.now() - 24 * 3600 * 1000;
+    const lots = allLots().filter((l) => watchRank(l) < 3 || new Date(String(l.ends_at)).getTime() > dayAgo);
     return watched().flatMap((id, i) => {
       const lot = lots.find((l) => l.id === id);
       return lot ? [{ watch: { id: i + 1, near_max_within: null, closes_in: [30, 10], above_max: true }, lot }] : [];
@@ -85,15 +86,17 @@ function get(path: string): unknown {
     const m = raw.match(/^(?:lot\s*(?:no\.?|nr\.?|#)?\s*)?#?(\d{1,4})$/i);
     const norm = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
     const words = !m && raw.length >= 3 && /[a-z]/i.test(raw) ? raw.toLowerCase() : null;
-    return allLots().flatMap((l) => {
+    const hits = allLots().flatMap((l) => {
       const why: string[] = [];
       const ring = String(l.ring || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (m && l.lot_no === Number(m[1])) why.push("lot number");
       if (norm.replace(/\D/g, "").length >= 3 && ring.includes(norm)) why.push("bird's ring");
       if (words && String(l.seller || "").toLowerCase().includes(words)) why.push("seller / breeder");
       if (words && !why.length && `${l.title} ${l.bloodline || ""}`.toLowerCase().includes(words)) why.push("mentioned in the listing");
-      return why.length ? [{ ...l, found_by: why }] : [];
+      return why.length ? [{ ...l, found_by: why } as LotCard] : [];
     });
+    const live = hits.filter((l) => l.status === "live" || l.status === "upcoming");
+    return { lots: q.get("closed") === "true" ? hits : live, closed_count: hits.length - live.length };
   }
   if (base === "/settings") return store.read("settings", snap.get["/settings"]);
   if (base === "/inventory") return store.read("inventory", snap.get["/inventory"]);

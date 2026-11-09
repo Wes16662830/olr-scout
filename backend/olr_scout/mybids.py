@@ -1,16 +1,19 @@
 """Your own bids: found in the bid history the sites show (your usernames from
 Settings, also when the site masks them), or marked by hand with "I bid on this"
 for sites that show no bidder names. Lots you bid on are added to the watchlist
-automatically (once: removing one keeps it removed) and raise an alert when
-you are outbid."""
+automatically (removing one keeps it removed, unless you lead on it) and raise
+an alert when you are outbid. Closed lots leave the watchlist a day after closing."""
 
 from __future__ import annotations
+
+from datetime import timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .models import BidHistory, Lot, Watch
 from .scoring import preferences
+from .util.timeutil import as_aware, now_utc
 
 
 def my_bid(s: Session, lot: Lot, prefs: dict) -> dict | None:
@@ -69,3 +72,20 @@ def auto_watch(s: Session, prefs: dict | None = None) -> int:
         added += 1
     s.flush()
     return added
+
+
+KEEP_CLOSED = timedelta(hours=24)
+
+
+def prune_watchlist(s: Session) -> int:
+    """Drop lots from the watchlist a day after they close (long enough to see if you won;
+    the Results screen keeps them)."""
+    cutoff = now_utc() - KEEP_CLOSED
+    gone = 0
+    for w in s.scalars(select(Watch).join(Lot, Watch.lot_id == Lot.id).where(Lot.status.not_in(LIVE))):
+        ended = as_aware(w.lot.closed_at or w.lot.ends_at)
+        if ended is None or ended < cutoff:
+            s.delete(w)
+            gone += 1
+    s.flush()
+    return gone
