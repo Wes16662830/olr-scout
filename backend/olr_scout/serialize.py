@@ -75,12 +75,14 @@ def bird_summary(s, bird: Bird) -> dict:
                         .order_by(Flight.flown_at, Flight.id)).all()
     long_ids = set(long_flight_ids([FlightIn(f.id, f.distance_km) for f in flights]))
     pos = {r.flight_id: r.position for r in bird.results}
+    behind = {r.flight_id: r.behind_min for r in bird.results}
     cond = _race_conditions(s, bird.season_id, flights)
     races = []
     for i, f in enumerate(flights, 1):
         p = pos.get(f.id)
         races.append({"label": _race_label(f, i), "name": f.name, "km": f.distance_km, "position": p,
                       "arrived": f.arrived, "basketed": f.basketed,
+                      "behind_min": round(behind[f.id], 1) if behind.get(f.id) is not None else None,
                       "pct": round(p / field_size(f.arrived, f.basketed), 4) if p and f.arrived else None,
                       "long": f.id in long_ids, "final": f.is_final, **cond.get(f.id, {})})
     flown = [r for r in races if r["position"]]
@@ -94,6 +96,7 @@ def bird_summary(s, bird: Bird) -> dict:
         "is_ace": bird.is_ace, "long_score": bird.long_score, "final_position": bird.final_position,
         "hard_score": bird.hard_score, "arrival_rate": bird.arrival_rate, "lost_after": bird.lost_after,
         "speed_index": bird.speed_index, "speed_pct": bird.speed_pct,
+        "final_form": bird.final_form, "final_trust": bird.final_trust,
         "best_speed": _best_condition(races, "speed_class"),
         "best_distance": _best_condition(races, "distance_band"),
     }

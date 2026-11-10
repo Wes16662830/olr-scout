@@ -90,7 +90,7 @@ export interface LotCard {
   lineage?: Lineage;
 }
 
-export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; basketed?: number | null; pct: number | null; long: boolean; final: boolean;
+export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; basketed?: number | null; behind_min?: number | null; pct: number | null; long: boolean; final: boolean;
   winner_speed?: number | null; speed_class?: string | null; distance_band?: string | null }
 export interface BirdSummary {
   ring: string; name: string | null; colour: string | null; sex: string | null;
@@ -99,7 +99,7 @@ export interface BirdSummary {
   best: { label: string; position: number; arrived: number | null } | null;
   is_ace: boolean; long_score: number | null; final_position: number | null;
   hard_score: number | null; arrival_rate: number | null; lost_after: string | null;
-  speed_index: number | null; speed_pct: number | null;
+  speed_index: number | null; speed_pct: number | null; final_form?: number | null; final_trust?: number | null;
   best_speed?: ConditionStats | null; best_distance?: ConditionStats | null;
 }
 export interface ConditionStats { by: Record<string, { races: number; avg: number }>; best: string | null }

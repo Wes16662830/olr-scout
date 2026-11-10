@@ -26,8 +26,26 @@ LONG_RACES = 5
 # measures the day's wind and weather, and placing already compares birds on the same day.
 DEFAULT_WEIGHTS = {"long": 40.0, "hard": 15.0, "consistency": 10.0, "final": 10.0, "family": 10.0, "sibling": 5.0,
                    "reliability": 5.0}
-# In the long score (average placing over the longest races) the final counts this many times.
+# In the long score (average placing over the longest races) the final counts up to this
+# many times — only when it matches the bird's form in the other long races.
 FINAL_WEIGHT = 3.0
+# Gap between the final placing and the bird's form (both as a share of the starters):
+# up to FINAL_MATCH the final is believed in full, from FINAL_OUTLIER on it is a one-off
+# (a flash in the pan, or a bad day) and counts like any other race.
+FINAL_MATCH = 0.15
+FINAL_OUTLIER = 0.40
+
+
+def final_trust(final_pct: float, form_pct: float | None) -> float:
+    """1.0 when the final matches the bird's form, falling to 0.0 for a one-off."""
+    if form_pct is None:
+        return 1.0  # nothing else to judge it by
+    gap = abs(final_pct - form_pct)
+    if gap <= FINAL_MATCH:
+        return 1.0
+    if gap >= FINAL_OUTLIER:
+        return 0.0
+    return 1.0 - (gap - FINAL_MATCH) / (FINAL_OUTLIER - FINAL_MATCH)
 # The bird's own results in the long and hard races, and its consistency across them,
 # always carry at least this share of the racing score — whatever data is missing and
 # whatever weights are set.
@@ -89,13 +107,22 @@ class FlightIn:
 @dataclass
 class BirdMetrics:
     ring_norm: str
-    percentiles: dict[int, float] = field(default_factory=dict)  # flight id → pct (1.0 if missing)
+    # flight id → race result 0..1 (0 best; 1.0 if missing): half placing among the starters,
+    # half time behind the winner where speeds are known.
+    percentiles: dict[int, float] = field(default_factory=dict)
+    behind: dict[int, float] = field(default_factory=dict)  # flight id → minutes behind the winner
     positions: dict[int, int | None] = field(default_factory=dict)
     long_score: float = 1.0
     all_score: float = 1.0
     consistency: float = 0.0
     final_position: int | None = None
     final_percentile: float | None = None
+    # Form = mean placing in the other long races; trust = how far the final is believed
+    # (see final_trust); final_score_pct = the final as scored: blended toward form when
+    # it was a one-off, so a flash in the pan earns no final bonus and a bad day no penalty.
+    final_form: float | None = None
+    final_trust: float | None = None
+    final_score_pct: float | None = None
     is_ace: bool = False
     # Robustness measures
     hard_score: float | None = None  # mean percentile in the season's highest-loss races (1.0 if missing)
@@ -139,6 +166,32 @@ def hard_flight_ids(flights: list[FlightIn], n: int = HARD_RACES) -> list[int]:
     return [fid for _, fid in rated[:n]]
 
 
+TIME_SHARE = 0.5  # a race result = half placing, half time behind the winner
+
+
+def time_behind(distance_km: float | None, speed: float | None, winner_speed: float | None) -> float | None:
+    """Minutes behind the winner, from speeds in metres per minute over the same distance."""
+    if not distance_km or not speed or not winner_speed or speed <= 0:
+        return None
+    d = distance_km * 1000
+    return max(0.0, d / speed - d / winner_speed)
+
+
+def time_scores(distance_km: float | None, speeds: dict[str, float]) -> tuple[dict[str, float], dict[str, float]]:
+    """Per bird: (minutes behind the winner, time score 0..1). The score scales minutes by
+    the race's own spread: as far back as the middle bird home = 0.5, twice that or more
+    = 1.0. So 250 birds landing within 3 minutes score almost alike, whatever their places."""
+    win = max(speeds.values(), default=0)
+    behind = {r: t for r, v in speeds.items() if (t := time_behind(distance_km, v, win)) is not None}
+    if len(behind) < 3:
+        return behind, {}
+    vals = sorted(behind.values())
+    median = vals[len(vals) // 2]
+    if median <= 0:
+        return behind, {}
+    return behind, {r: min(1.0, 0.5 * t / median) for r, t in behind.items()}
+
+
 def season_metrics(
     flights: list[FlightIn],
     results: dict[int, dict[str, int]],
@@ -165,6 +218,11 @@ def season_metrics(
     final_ids = {f.id for f in finals}
     speeds = speeds or {}
     winner_speed = {fid: max(v.values()) for fid, v in speeds.items() if v}
+    tscore: dict[int, dict[str, float]] = {}
+    m_behind: dict[int, dict[str, float]] = {}
+    for f in races:
+        if speeds.get(f.id):
+            m_behind[f.id], tscore[f.id] = time_scores(f.distance_km, speeds[f.id])
     out: dict[str, BirdMetrics] = {}
     for ring in birds:
         m = BirdMetrics(ring)
@@ -177,15 +235,28 @@ def season_metrics(
             field = field_size(arrived, f.basketed)
             if pos is not None and field:
                 pct = min(1.0, max(0.0, pos / field))
+                ts = tscore.get(f.id, {}).get(ring)
+                if ts is not None:  # half placing, half time behind the winner
+                    pct = (1 - TIME_SHARE) * pct + TIME_SHARE * ts
             else:
                 pct = 1.0
             m.percentiles[f.id] = pct
+            if ring in m_behind.get(f.id, {}):
+                m.behind[f.id] = m_behind[f.id][ring]
             m.positions[f.id] = pos
         if races:
             m.all_score = sum(m.percentiles.values()) / len(races)
-            # Average placing over the longest races, the final counting FINAL_WEIGHT times.
+            # Average placing over the longest races; the final counts up to FINAL_WEIGHT times,
+            # as far as it matches the bird's form in the other long races.
             ids = (long_ids | final_ids) or set(m.percentiles)
-            wts = {i: (FINAL_WEIGHT if i in final_ids else 1.0) for i in ids}
+            others = [m.percentiles[i] for i in ids if i not in final_ids]
+            form = sum(others) / len(others) if others else None
+            wts = {i: 1.0 for i in ids}
+            for fid in final_ids & ids:
+                trust = final_trust(m.percentiles[fid], form)
+                wts[fid] = 1.0 + (FINAL_WEIGHT - 1.0) * trust
+                m.final_form, m.final_trust = form, trust
+                m.final_score_pct = trust * m.percentiles[fid] + (1 - trust) * (form if form is not None else 1.0)
             m.long_score = sum(m.percentiles[i] * w for i, w in wts.items()) / sum(wts.values())
             m.consistency = consistency(m.percentiles, long_ids | hard_ids)
         for f in finals:

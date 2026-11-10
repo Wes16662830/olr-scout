@@ -133,8 +133,15 @@ A higher tier always ranks above a lower one. Details:
 * Consistency (not defined in the brief, so chosen here): the share of the season's
   long and hard races the bird finished in the top quarter of the starters. (Top half
   was too easy: in AfrikaPro 2026 the best ~150 birds all scored the maximum.)
-* Long score = average placing over the season's 5 longest races, with the final
-  counting 3 times. The final also has its own component.
+* Race result (0 best, 1 = not home) = half placing among the starters, half time
+  behind the winner. Time is scaled to the race: as far back as the middle bird home
+  = 0.5, twice that or more = 1.0. So a bunch landing within minutes scores almost
+  alike, and a winner's clear margin counts.
+* Long score = average result over the season's 5 longest races, the final counting
+  up to 3 times — only as far as it matches the bird's form in the other long races
+  (within 15 places per 100 starters: full; 40 or more off: counts once). A one-off
+  final, far better (flash in the pan) or far worse (bad day) than its form, is also
+  scored at the bird's form in the final component.
 * Final: a race named "final"; otherwise (AfrikaPro 2026 just calls it "Race 10") the
   last race, if it is also the longest and nothing has been flown for 14 days since.
 * Speed is not scored: average speed mostly reflects the day's wind and weather, and

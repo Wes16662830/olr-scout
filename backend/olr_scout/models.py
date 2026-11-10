@@ -213,6 +213,10 @@ class Bird(Base):
     lost_after: Mapped[str | None] = mapped_column(String(40))
     speed_index: Mapped[float | None] = mapped_column(Float)
     speed_pct: Mapped[float | None] = mapped_column(Float)
+    # The final judged against the bird's form in the other long races (tier_a.final_trust).
+    final_form: Mapped[float | None] = mapped_column(Float)
+    final_trust: Mapped[float | None] = mapped_column(Float)
+    final_score_pct: Mapped[float | None] = mapped_column(Float)
     results = relationship("BirdResult", back_populates="bird", cascade="all, delete-orphan")
     season = relationship("Season")
 
@@ -225,6 +229,10 @@ class BirdResult(Base):
     flight_id: Mapped[int] = mapped_column(ForeignKey("flight.id", ondelete="CASCADE"), index=True)
     position: Mapped[int | None] = mapped_column(Integer)
     speed: Mapped[float | None] = mapped_column(Float)
+    # The race result as scored (0 best, 1 worst): half placing among the starters, half
+    # time behind the winner (tier_a.season_metrics). None for data stored before it.
+    result_pct: Mapped[float | None] = mapped_column(Float)
+    behind_min: Mapped[float | None] = mapped_column(Float)  # minutes behind the race winner
     bird = relationship("Bird", back_populates="results")
     flight = relationship("Flight")
 

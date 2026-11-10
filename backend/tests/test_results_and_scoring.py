@@ -431,15 +431,39 @@ def test_stored_seasons_are_rescored_without_downloading(session, client, web):
 
 
 
-def test_final_counts_three_times_in_the_long_score():
+def test_final_counts_three_times_only_when_it_matches_form():
     flights = [FlightIn(i, 100 * i, arrived=100, basketed=100, race_no=i, is_final=(i == 6)) for i in range(1, 7)]
-    # A won every long race but flopped in the final; B was average but won the final.
-    res = {i: {"A": 1, "B": 50} for i in range(1, 6)}
-    res[6] = {"A": 90, "B": 1}
+    res = {i: {"STEADY": 5, "FLASH": 60, "BADDAY": 3, "CLOSE": 20} for i in range(1, 6)}
+    res[6] = {"STEADY": 2, "FLASH": 1, "BADDAY": 80, "CLOSE": 45}
     m = season_metrics(flights, res)
-    # Long races: the 5 longest (2..6), the final (6) counting 3 times: weights 1,1,1,1,3.
-    assert m["A"].long_score == pytest.approx((4 * 0.01 + 3 * 0.90) / 7)
-    assert m["B"].long_score == pytest.approx((4 * 0.50 + 3 * 0.01) / 7)
+    # Long races 2..6. STEADY's final matches its form: it counts 3x and is scored as flown.
+    assert m["STEADY"].final_trust == 1.0
+    assert m["STEADY"].long_score == pytest.approx((4 * 0.05 + 3 * 0.02) / 7)
+    assert m["STEADY"].final_score_pct == pytest.approx(0.02)
+    # FLASH: 60th of 100 all season, then won the final. A one-off: counts once, and the
+    # final component sees its form (0.60), not the win.
+    assert m["FLASH"].final_trust == 0.0
+    assert m["FLASH"].long_score == pytest.approx((4 * 0.60 + 0.01) / 5)
+    assert m["FLASH"].final_score_pct == pytest.approx(0.60)
+    # BADDAY: 3rd every time, 80th in the final: not sunk by one race either.
+    assert m["BADDAY"].final_trust == 0.0 and m["BADDAY"].final_score_pct == pytest.approx(0.03)
+    # CLOSE: 25 places per 100 off its form: in between, believed partly.
+    assert 0 < m["CLOSE"].final_trust < 1
+    assert 0.20 < m["CLOSE"].final_score_pct < 0.45
+
+
+def test_flash_in_the_pan_scores_below_a_steady_bird():
+    """End to end: the final winner with poor form must not outscore a bird that was
+    consistently near the top, final included."""
+    flights = [FlightIn(i, 100 * i, arrived=100, basketed=100, race_no=i, is_final=(i == 6)) for i in range(1, 7)]
+    res = {i: {"STEADY": 8, "FLASH": 55} for i in range(1, 6)}
+    res[6] = {"STEADY": 10, "FLASH": 1}
+    m = season_metrics(flights, res)
+
+    def score(b):
+        return bid_score(b.long_score, 0.0, b.final_score_pct, True, None, None).score
+
+    assert score(m["STEADY"]) > score(m["FLASH"]) + 20
 
 
 def test_unnamed_final_is_the_last_longest_race_once_the_season_is_over():
@@ -466,3 +490,34 @@ def test_unnamed_final_is_the_last_longest_race_once_the_season_is_over():
     named[1].name, named[1].is_final = "Final", True  # a named final is never overridden
     mark_assumed_final(named, now_utc())
     assert [f.name for f in named if f.is_final] == ["Final"]
+
+
+def test_time_behind_winner_softens_a_bunched_arrival():
+    from olr_scout.scoring.tier_a import time_behind, time_scores
+
+    # 600 km; winner 1,250 m/min = 480 min. 1,240 m/min ≈ 3.9 min behind.
+    assert time_behind(600, 1240, 1250) == pytest.approx(600_000 / 1240 - 480, abs=1e-6)
+    # Race of 100 starters: birds 2..60 land in one bunch 5 minutes after a clear winner,
+    # the rest trickle in up to 2 hours behind.
+    d = 300
+    win = 1300.0
+    speeds = {"W": win}
+    for i in range(2, 61):
+        speeds[f"B{i}"] = d * 1000 / (d * 1000 / win + 5 + i * 0.01)
+    for i in range(61, 101):
+        speeds[f"T{i}"] = d * 1000 / (d * 1000 / win + 30 + (i - 60) * 2)
+    _, ts = time_scores(d, speeds)
+    # Placing says 5th and 55th are far apart (0.05 vs 0.55); on the clock they are nearly level.
+    assert abs(ts["B5"] - ts["B55"]) < 0.05
+    assert ts["W"] == 0.0 and ts["T100"] == 1.0
+    flights = [FlightIn(1, d, arrived=100, basketed=100, race_no=1)]
+    results = {1: {r: i for i, r in enumerate(sorted(speeds, key=lambda r: -speeds[r]), 1)}}
+    m = season_metrics(flights, results, speeds={1: speeds})
+    # Each race result is half placing, half time.
+    assert m["B55"].percentiles[1] == pytest.approx(0.5 * 55 / 100 + 0.5 * ts["B55"])
+    # The gap between 5th and 55th halves: they landed together.
+    gap = m["B55"].percentiles[1] - m["B5"].percentiles[1]
+    assert gap < 0.5 * (0.55 - 0.05) + 0.03
+    # The winner's 5-minute margin now counts: it is well clear of the bunch.
+    assert m["W"].percentiles[1] < m["B2"].percentiles[1] - 0.2
+    assert m["B55"].behind[1] == pytest.approx(5.55, abs=0.01)

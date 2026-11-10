@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { api, BirdSummary, Breeding, Lineage, LotCard as Lot } from "../lib/api";
+import { api, RaceChip, BirdSummary, Breeding, Lineage, LotCard as Lot } from "../lib/api";
 import { countdown, pct, useNow, when, zar } from "../lib/format";
 
 const TIER_TEXT: Record<string, string> = {
@@ -71,10 +71,10 @@ function BirdBlock({ b, seller, lot }: { b: BirdSummary; seller: string | null; 
         {b.breeder_country ? ` (${b.breeder_country})` : ""}
         {seller && b.breeder && seller.toLowerCase() !== b.breeder.toLowerCase() && <span className="muted"> · seller: {seller}</span>}
       </div>
-      <div className="races" title="Position / birds arrived (hover a race for how many started). Underlined = one of the 5 longest races.">
+      <div className="races" title="Position / birds arrived (hover a race for how many started and time behind the winner). Underlined = one of the 5 longest races.">
         {b.races.map((r) => (
           <span key={r.label + r.name} className={`race ${chipClass(r.pct)} ${r.long ? "long" : ""}`}
-            title={`${r.name}${r.km ? ` · ${r.km} km` : ""}${r.winner_speed ? ` · winner ${Math.round(r.winner_speed)} m/min (${r.speed_class ?? "?"} race)` : ""}${r.position ? ` · ${ordinal(r.position)} of ${r.arrived ?? "?"} home` : " · did not arrive"}${r.basketed ? `, ${r.basketed} started` : ""}`}>
+            title={`${r.name}${r.km ? ` · ${r.km} km` : ""}${r.winner_speed ? ` · winner ${Math.round(r.winner_speed)} m/min (${r.speed_class ?? "?"} race)` : ""}${r.position ? ` · ${ordinal(r.position)} of ${r.arrived ?? "?"} home` : " · did not arrive"}${r.basketed ? `, ${r.basketed} started` : ""}${r.behind_min != null ? ` · ${behindText(r.behind_min)}` : ""}`}>
             <small>{r.label}</small> {r.position ? `${r.position}/${r.arrived ?? "?"}` : "–"}
           </span>
         ))}
@@ -84,6 +84,7 @@ function BirdBlock({ b, seller, lot }: { b: BirdSummary; seller: string | null; 
         {b.best ? ` · best ${ordinal(b.best.position)} of ${b.best.arrived ?? "?"} (${b.best.label})` : ""}
         {b.long_score !== null ? ` · long races avg top ${pct(b.long_score)}` : ""}
         {b.final_position ? ` · final ${ordinal(b.final_position)}` : ""}
+        {finalNote(b)}
         {b.is_ace ? " · ACE" : ""}
       </div>
       <div className="small muted">
@@ -162,6 +163,24 @@ function BreedingBlock({ br }: { br: Breeding }) {
 }
 
 const STATUS_TEXT: Record<string, string> = { verified: "verified", mismatch: "claim mismatch", claimed: "seller-claimed" };
+
+function behindText(min: number) {
+  if (min < 0.05) return "race winner";
+  if (min < 60) return `${min < 10 ? min.toFixed(1) : Math.round(min)} min behind the winner`;
+  return `${Math.floor(min / 60)} h ${Math.round(min % 60)} min behind the winner`;
+}
+
+/** Whether the final was leaned on: only when it matches the bird's form in the other long races. */
+function finalNote(b: { final_position: number | null; final_trust?: number | null; final_form?: number | null; races: RaceChip[] }) {
+  if (b.final_trust == null || b.final_form == null || b.final_trust >= 1) return "";
+  const fin = b.races.find((r) => r.final);
+  const better = fin?.pct != null ? fin.pct < b.final_form : false;
+  const form = `form top ${Math.max(1, Math.round(b.final_form * 100))}% in the other long races`;
+  const how = b.final_trust <= 0 ? "counted like any other race" : "counted only partly";
+  return better
+    ? ` · final looks like a one-off (${form}): ${how}`
+    : ` · final well below its form (${form}): ${how}`;
+}
 
 function Parents({ l }: { l: Lineage }) {
   return (

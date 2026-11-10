@@ -25,7 +25,9 @@ DATA_VERSION = 3  # 3: races were cut off at 1,000 rows before
 # Bump when the way ratings are worked out changes: stored results are re-scored, not re-downloaded.
 # 2: placings against the birds that started, consistency = top quarter, missed races slow.
 # 3: unnamed final = last + longest race; final counts 3× in the long score.
-METRICS_VERSION = 3
+# 4: the final counts extra only as far as it matches the bird's form (no flash in the pan).
+# 5: a race result is half placing, half time behind the winner (bunched arrivals).
+METRICS_VERSION = 5
 
 # Editable in Settings → OLR registry. Seasons: year → Benzing season id.
 SEED_REGISTRY = [
@@ -230,10 +232,12 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
         b.is_ace, b.long_score, b.all_score, b.final_position = m.is_ace, m.long_score, m.all_score, m.final_position
         b.hard_score, b.arrival_rate, b.lost_after = m.hard_score, m.arrival_rate, m.lost_after
         b.speed_index, b.speed_pct = m.speed_index, m.speed_pct
+        b.final_form, b.final_trust, b.final_score_pct = m.final_form, m.final_trust, m.final_score_pct
         s.add(b)
         birds.append((b, m))
     s.flush()  # assigns ids in one go
-    s.add_all(BirdResult(bird_id=b.id, flight_id=fid, position=pos, speed=speeds.get(fid, {}).get(b.ring_norm))
+    s.add_all(BirdResult(bird_id=b.id, flight_id=fid, position=pos, speed=speeds.get(fid, {}).get(b.ring_norm),
+                         result_pct=m.percentiles.get(fid), behind_min=m.behind.get(fid))
               for b, m in birds for fid, pos in m.positions.items() if pos is not None)
     season.ingested_at = now_utc()
     season.data_version = DATA_VERSION
@@ -251,8 +255,9 @@ def recompute_metrics(s: Session, season: Season) -> int:
     results: dict[int, dict[str, int]] = defaultdict(dict)
     speeds: dict[int, dict[str, float]] = defaultdict(dict)
     by_id = {b.id: b for b in birds}
+    stored = list(s.scalars(select(BirdResult).where(BirdResult.bird_id.in_(list(by_id))))) if by_id else []
     if by_id:
-        for r in s.scalars(select(BirdResult).where(BirdResult.bird_id.in_(list(by_id)))):
+        for r in stored:
             ring = by_id[r.bird_id].ring_norm
             if r.position is not None:
                 results[r.flight_id][ring] = r.position
@@ -262,6 +267,10 @@ def recompute_metrics(s: Session, season: Season) -> int:
         [FlightIn(f.id, f.distance_km, f.arrived, f.is_training, f.is_final, f.name, f.basketed, f.race_no)
          for f in flights],
         dict(results), {b.ring_norm for b in birds}, registered_count=season.registered, speeds=dict(speeds))
+    for r in stored:
+        m = metrics.get(by_id[r.bird_id].ring_norm)
+        if m is not None:
+            r.result_pct, r.behind_min = m.percentiles.get(r.flight_id), m.behind.get(r.flight_id)
     for b in birds:
         m = metrics.get(b.ring_norm)
         if m is None:
@@ -269,6 +278,7 @@ def recompute_metrics(s: Session, season: Season) -> int:
         b.is_ace, b.long_score, b.all_score, b.final_position = m.is_ace, m.long_score, m.all_score, m.final_position
         b.hard_score, b.arrival_rate, b.lost_after = m.hard_score, m.arrival_rate, m.lost_after
         b.speed_index, b.speed_pct = m.speed_index, m.speed_pct
+        b.final_form, b.final_trust, b.final_score_pct = m.final_form, m.final_trust, m.final_score_pct
     season.metrics_version = METRICS_VERSION
     s.flush()
     return len(birds)
