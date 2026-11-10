@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from ..models import Bird, BirdResult, FamilyStat, Flight, Olr, Season, SourceHealth
 from ..rings import normalise
-from ..scoring.tier_a import FlightIn, aggregate_families, family_key, season_metrics, shrunk_rate
+from ..scoring.tier_a import FlightIn, aggregate_families, family_key, field_size, season_metrics, shrunk_rate
 from ..util.timeutil import as_aware, now_utc
 from .base import BirdRecord, HealthError, RaceLine, ResultsSource
 
@@ -22,6 +22,9 @@ PROGRESS: dict = {}
 # Bump when ingest stores new data, so seasons downloaded by older versions are fetched
 # again once (2: per-bird speed for the speed-vs-winner measure).
 DATA_VERSION = 3  # 3: races were cut off at 1,000 rows before
+# Bump when the way ratings are worked out changes: stored results are re-scored, not re-downloaded.
+# 2: placings against the birds that started, consistency = top quarter, missed races slow.
+METRICS_VERSION = 2
 
 # Editable in Settings → OLR registry. Seasons: year → Benzing season id.
 SEED_REGISTRY = [
@@ -233,9 +236,53 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
               for b, m in birds for fid, pos in m.positions.items() if pos is not None)
     season.ingested_at = now_utc()
     season.data_version = DATA_VERSION
+    season.metrics_version = METRICS_VERSION
     s.flush()
     recompute_family_stats(s, season.olr_id)
     return report
+
+
+def recompute_metrics(s: Session, season: Season) -> int:
+    """Work a season's bird ratings out again from the results already stored."""
+    flights = list(season.flights)
+    birds = list(s.scalars(select(Bird).where(Bird.season_id == season.id)))
+    results: dict[int, dict[str, int]] = defaultdict(dict)
+    speeds: dict[int, dict[str, float]] = defaultdict(dict)
+    by_id = {b.id: b for b in birds}
+    if by_id:
+        for r in s.scalars(select(BirdResult).where(BirdResult.bird_id.in_(list(by_id)))):
+            ring = by_id[r.bird_id].ring_norm
+            if r.position is not None:
+                results[r.flight_id][ring] = r.position
+            if r.speed:
+                speeds[r.flight_id][ring] = r.speed
+    metrics = season_metrics(
+        [FlightIn(f.id, f.distance_km, f.arrived, f.is_training, f.is_final, f.name, f.basketed, f.race_no)
+         for f in flights],
+        dict(results), {b.ring_norm for b in birds}, registered_count=season.registered, speeds=dict(speeds))
+    for b in birds:
+        m = metrics.get(b.ring_norm)
+        if m is None:
+            continue
+        b.is_ace, b.long_score, b.all_score, b.final_position = m.is_ace, m.long_score, m.all_score, m.final_position
+        b.hard_score, b.arrival_rate, b.lost_after = m.hard_score, m.arrival_rate, m.lost_after
+        b.speed_index, b.speed_pct = m.speed_index, m.speed_pct
+    season.metrics_version = METRICS_VERSION
+    s.flush()
+    return len(birds)
+
+
+def recompute_stale_metrics(s: Session) -> int:
+    """Re-score every downloaded season whose ratings were worked out by an older version."""
+    stale = [se for se in s.scalars(select(Season).where(Season.ingested_at.is_not(None)))
+             if (se.metrics_version or 0) < METRICS_VERSION]
+    for se in stale:
+        PROGRESS.update(phase="re-scoring stored results", season=se.year, season_id=se.id)
+        recompute_metrics(s, se)
+    if stale:
+        recompute_family_stats(s)  # rebuilds every family row
+        PROGRESS.update(phase="done")
+    return len(stale)
 
 
 def recompute_family_stats(s: Session, olr_id: int | None = None) -> None:
@@ -288,7 +335,7 @@ def race_history(s: Session, ring_norm: str) -> BirdRecord:
             rec.races.append(RaceLine(
                 olr=season.olr.name, season_year=season.year, flight=f.name, distance_km=f.distance_km,
                 position=p, arrived=arrived, registered=season.registered,
-                percentile=min(1.0, p / arrived) if p and arrived else 1.0,
+                percentile=min(1.0, p / field_size(arrived, f.basketed)) if p and arrived else 1.0,
             ))
     return rec
 

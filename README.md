@@ -128,8 +128,13 @@ A higher tier always ranks above a lower one. Details:
 * ace = top 5% of registered birds by long score (field ace rate 5% by construction).
 * family ace rate = (aces + 0.05 × 20) ÷ (entries + 20), teams grouped by stripping
   I/II/A/B/C/(Single) and ignoring partner order.
+* Placings are measured against the birds that started a race (basketed), not only
+  those that came home, so finishing a hard race counts for what it is.
 * Consistency (not defined in the brief, so chosen here): the share of the season's
-  races the bird finished in the top half of arrivals.
+  long and hard races the bird finished in the top quarter of the starters. (Top half
+  was too easy: in AfrikaPro 2026 the best ~150 birds all scored the maximum.)
+* Speed: the bird's speed as a share of the winner's over the long races; a long race
+  it did not finish counts as 0, so missing hard races can't make a bird look fast.
 * Components without data (no final flown, no family, no siblings) are left out
   and the other weights renormalised. Nothing is filled in with a guess.
 * Preferences: Love ×1.15, Like ×1.07, Neutral ×1, Avoid = excluded. Tier C stays ≤ 60

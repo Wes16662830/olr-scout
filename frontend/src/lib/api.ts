@@ -90,7 +90,7 @@ export interface LotCard {
   lineage?: Lineage;
 }
 
-export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; pct: number | null; long: boolean; final: boolean;
+export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; basketed?: number | null; pct: number | null; long: boolean; final: boolean;
   winner_speed?: number | null; speed_class?: string | null; distance_band?: string | null }
 export interface BirdSummary {
   ring: string; name: string | null; colour: string | null; sex: string | null;

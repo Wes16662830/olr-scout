@@ -21,7 +21,7 @@ from ..models import AncestorClaim, Bird, FamilyStat, Flight, Lot
 from ..rings import RingIndex, ResultRing, normalise, parse_ring
 from . import pedigree, preferences, progeny, seller
 from ..util.timeutil import as_aware, now_utc
-from .tier_a import bid_score
+from .tier_a import field_size, bid_score
 
 TIER_ORDER = {"A": 0, "B": 1, "C": 2, "D": 3}
 
@@ -56,7 +56,8 @@ def build_context(s: Session, prefs: dict | None = None) -> Context:
     from ..models import BirdResult
 
     best: dict[int, float | None] = {b: None for b in birds}
-    q = (select(BirdResult.bird_id, func.min(BirdResult.position * 1.0 / Flight.arrived))
+    field = func.max(Flight.arrived, func.coalesce(Flight.basketed, 0))  # see tier_a.field_size
+    q = (select(BirdResult.bird_id, func.min(BirdResult.position * 1.0 / field))
          .join(Flight, Flight.id == BirdResult.flight_id)
          .where(BirdResult.position.is_not(None), Flight.arrived > 0)
          .group_by(BirdResult.bird_id))
@@ -179,14 +180,15 @@ def _long_for(b: Bird, emphasis: str) -> float:
 
 
 def _consistency(b: Bird, ctx: Context) -> float:
-    """Top-half finishes across the season's long and hard races (see tier_a.consistency)."""
-    from .tier_a import FlightIn, consistency, hard_flight_ids, long_flight_ids
+    """Top-quarter finishes across the season's long and hard races (see tier_a.consistency)."""
+    from .tier_a import FlightIn, consistency, field_size, hard_flight_ids, long_flight_ids
 
     flights = [f for f in b.season.flights if not f.is_training]
     fin = [FlightIn(f.id, f.distance_km, f.arrived, False, f.is_final, f.name, f.basketed, f.race_no) for f in flights]
     ids = set(long_flight_ids(fin)) | set(hard_flight_ids(fin))
     pos = {r.flight_id: r.position for r in b.results}
-    pct = {f.id: (min(1.0, pos[f.id] / f.arrived) if pos.get(f.id) and f.arrived else 1.0) for f in flights}
+    pct = {f.id: (min(1.0, pos[f.id] / field_size(f.arrived, f.basketed)) if pos.get(f.id) and f.arrived else 1.0)
+           for f in flights}
     return consistency(pct, ids)
 
 
@@ -196,7 +198,7 @@ def score_bird(b: Bird, ctx: Context, sibling_longs: list[float] | None = None):
     if b.final_position:
         finals = [f for f in b.season.flights if f.is_final and f.arrived]
         if finals:
-            final_pct = min(1.0, b.final_position / finals[0].arrived)
+            final_pct = min(1.0, b.final_position / field_size(finals[0].arrived, finals[0].basketed))
     return bid_score(
         _long_for(b, ctx.prefs.get("distance_emphasis", "distance")),
         _consistency(b, ctx),

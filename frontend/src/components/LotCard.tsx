@@ -71,10 +71,10 @@ function BirdBlock({ b, seller, lot }: { b: BirdSummary; seller: string | null; 
         {b.breeder_country ? ` (${b.breeder_country})` : ""}
         {seller && b.breeder && seller.toLowerCase() !== b.breeder.toLowerCase() && <span className="muted"> · seller: {seller}</span>}
       </div>
-      <div className="races" title="Position / birds arrived. Underlined = one of the 5 longest races.">
+      <div className="races" title="Position / birds arrived (hover a race for how many started). Underlined = one of the 5 longest races.">
         {b.races.map((r) => (
           <span key={r.label + r.name} className={`race ${chipClass(r.pct)} ${r.long ? "long" : ""}`}
-            title={`${r.name}${r.km ? ` · ${r.km} km` : ""}${r.winner_speed ? ` · winner ${Math.round(r.winner_speed)} m/min (${r.speed_class ?? "?"} race)` : ""}${r.position ? ` · ${ordinal(r.position)} of ${r.arrived ?? "?"}` : " · did not arrive"}`}>
+            title={`${r.name}${r.km ? ` · ${r.km} km` : ""}${r.winner_speed ? ` · winner ${Math.round(r.winner_speed)} m/min (${r.speed_class ?? "?"} race)` : ""}${r.position ? ` · ${ordinal(r.position)} of ${r.arrived ?? "?"} home` : " · did not arrive"}${r.basketed ? `, ${r.basketed} started` : ""}`}>
             <small>{r.label}</small> {r.position ? `${r.position}/${r.arrived ?? "?"}` : "–"}
           </span>
         ))}

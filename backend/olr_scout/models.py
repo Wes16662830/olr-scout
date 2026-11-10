@@ -165,6 +165,9 @@ class Season(Base):
     teams: Mapped[int | None] = mapped_column(Integer)
     ingested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     data_version: Mapped[int | None] = mapped_column(Integer)  # re-download when lower than ingest.DATA_VERSION
+    # Ratings worked out from the stored results; recomputed (no download) when lower than
+    # ingest.METRICS_VERSION.
+    metrics_version: Mapped[int | None] = mapped_column(Integer)
     # Last time the season was looked at and had no races yet (so it is not re-asked every refresh).
     no_races_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     olr = relationship("Olr", back_populates="seasons")

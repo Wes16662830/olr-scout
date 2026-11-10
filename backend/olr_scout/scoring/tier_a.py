@@ -108,13 +108,22 @@ def long_flight_ids(flights: list[FlightIn], n: int = LONG_RACES) -> list[int]:
     return [f.id for f in races[:n]]
 
 
-def consistency(percentiles: dict[int, float], race_ids: set[int]) -> float:
+def field_size(arrived: int | None, basketed: int | None) -> int | None:
+    """Birds a placing is measured against: those that started (basketed), else those home."""
+    return max(arrived or 0, basketed or 0) or None
+
+
+CONSISTENCY_CUT = 0.25  # "a good result": top quarter of the birds that started
+
+
+def consistency(percentiles: dict[int, float], race_ids: set[int], cut: float = CONSISTENCY_CUT) -> float:
     """Share of the season's long and hard races in which the bird finished in the top
-    half of arrivals (a missed race counts as not). All races if none are identified."""
+    quarter of the field (a missed race counts as not). All races if none are identified.
+    (Top half was too easy: in AfrikaPro 2026 the best ~150 birds all scored 1.0.)"""
     ids = [i for i in race_ids if i in percentiles] or list(percentiles)
     if not ids:
         return 0.0
-    return sum(1 for i in ids if percentiles[i] <= 0.5) / len(ids)
+    return sum(1 for i in ids if percentiles[i] <= cut) / len(ids)
 
 
 def hard_flight_ids(flights: list[FlightIn], n: int = HARD_RACES) -> list[int]:
@@ -158,9 +167,12 @@ def season_metrics(
         for f in races:
             rows = results.get(f.id, {})
             pos = rows.get(ring)
+            # Place among the birds that STARTED: in a hard race, coming home at all beats most
+            # of the field, so last of 300 arrivals out of 1,000 basketed is not "last".
             arrived = f.arrived or (len(rows) if rows else None) or n_reg
-            if pos is not None and arrived:
-                pct = min(1.0, max(0.0, pos / arrived))
+            field = field_size(arrived, f.basketed)
+            if pos is not None and field:
+                pct = min(1.0, max(0.0, pos / field))
             else:
                 pct = 1.0
             m.percentiles[f.id] = pct
@@ -184,10 +196,11 @@ def season_metrics(
                 m.lost_after = f"R{last.race_no}" if getattr(last, "race_no", None) else last.name or f"race {arrived_in[-1] + 1}"
         if hard_ids:
             m.hard_score = sum(m.percentiles[i] for i in hard_ids) / len(hard_ids)
-        ratios = [speeds[i][ring] / winner_speed[i] for i in long_ids
-                  if i in winner_speed and ring in speeds.get(i, {}) and winner_speed[i] > 0]
-        if ratios:
-            m.speed_index = sum(ratios) / len(ratios)
+        # Over every long race with speeds; a race it did not finish counts as 0, so missing
+        # the hardest races can't make a bird look fast.
+        timed = [i for i in long_ids if winner_speed.get(i, 0) > 0]
+        if any(ring in speeds.get(i, {}) for i in timed):
+            m.speed_index = sum(speeds[i].get(ring, 0.0) / winner_speed[i] for i in timed) / len(timed)
         out[ring] = m
     ranked = sorted((b for b in out.values() if b.speed_index is not None), key=lambda b: -b.speed_index)
     for i, b in enumerate(ranked):

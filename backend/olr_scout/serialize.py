@@ -9,7 +9,7 @@ from .models import AncestorClaim, BidHistory, Bird, Flight
 import re
 
 from .scoring import engine, pedigree, preferences
-from .scoring.tier_a import long_flight_ids, FlightIn
+from .scoring.tier_a import field_size, long_flight_ids, FlightIn
 from .util.timeutil import as_aware
 
 
@@ -80,7 +80,8 @@ def bird_summary(s, bird: Bird) -> dict:
     for i, f in enumerate(flights, 1):
         p = pos.get(f.id)
         races.append({"label": _race_label(f, i), "name": f.name, "km": f.distance_km, "position": p,
-                      "arrived": f.arrived, "pct": round(p / f.arrived, 4) if p and f.arrived else None,
+                      "arrived": f.arrived, "basketed": f.basketed,
+                      "pct": round(p / field_size(f.arrived, f.basketed), 4) if p and f.arrived else None,
                       "long": f.id in long_ids, "final": f.is_final, **cond.get(f.id, {})})
     flown = [r for r in races if r["position"]]
     best = min(flown, key=lambda r: r["pct"] if r["pct"] is not None else 9) if flown else None

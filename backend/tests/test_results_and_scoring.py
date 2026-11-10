@@ -88,12 +88,15 @@ def test_settings_refuse_weights_that_break_the_rule(session):
 
 
 def test_consistency_counts_long_and_hard_races_only():
-    # Seven races; the bird wins the two short easy ones and is bottom half in the 5 long/hard ones.
+    # Seven races; the bird wins the two short easy ones and is outside the top quarter of the
+    # starters (100) in the 5 long/hard ones.
     flights = [FlightIn(i, d, arrived=a, basketed=100, race_no=i)
-               for i, (d, a) in enumerate([(50, 99), (60, 98), (250, 45), (300, 40), (400, 35), (500, 30), (600, 25)], 1)]
-    res = {1: {"X": 1}, 2: {"X": 1}, 3: {"X": 30}, 4: {"X": 30}, 5: {"X": 30}, 6: {"X": 25}, 7: {"X": 20}}
+               for i, (d, a) in enumerate([(50, 99), (60, 98), (250, 45), (300, 40), (400, 35), (500, 35), (600, 35)], 1)]
+    res = {1: {"X": 1}, 2: {"X": 1}, 3: {"X": 30}, 4: {"X": 30}, 5: {"X": 30}, 6: {"X": 30}, 7: {"X": 30}}
     m = season_metrics(flights, res)["X"]
     assert m.consistency == 0.0  # short-race wins no longer count
+    res[7]["X"] = 20  # 20th of 100 starters: top quarter, although 20th of only 35 home
+    assert season_metrics(flights, res)["X"].consistency == pytest.approx(1 / 5)
 
 
 def test_hard_races_survival_and_speed():
@@ -103,11 +106,14 @@ def test_hard_races_survival_and_speed():
     speeds = {1: {"A": 1500.0, "B": 1490.0}, 2: {"A": 1300.0, "B": 1400.0}, 3: {"A": 1200.0}}
     m = season_metrics(flights, res, {"A", "B", "C"}, speeds=speeds)
     # Hardest three: race 4 (80% lost), 3 (60%), 2 (50%).
-    assert m["A"].hard_score == pytest.approx((2 / 50 + 1 / 40 + 1.0) / 3)
+    # Placed against the 100 that started, not the few that came home.
+    assert m["A"].hard_score == pytest.approx((2 / 100 + 1 / 100 + 1.0) / 3)
     assert m["A"].arrival_rate == 0.75 and m["A"].lost_after == "R3"
     assert m["B"].lost_after == "R2" and m["C"].lost_after == "never"
-    assert m["B"].speed_index > m["A"].speed_index  # B won race 2 by a margin, A only race 1/3
-    assert m["B"].speed_pct == 0.0 and m["C"].speed_index is None
+    # B won race 2 by a margin but never came home from race 3: a missed race counts as 0,
+    # so skipping the hard races can't make a bird look fast.
+    assert m["A"].speed_index > m["B"].speed_index
+    assert m["A"].speed_pct == 0.0 and m["C"].speed_index is None
 
 
 def test_spearman():
@@ -401,3 +407,22 @@ def test_follows_next_page_links_as_a_last_resort(client, web):
     finally:
         bz.PAGE_SIZE = 1000
     assert len(fr.rows) == 60 and fr.complete
+
+
+def test_stored_seasons_are_rescored_without_downloading(session, client, web):
+    """An update that changes the rating rules re-scores what is stored; nothing is fetched."""
+    from olr_scout.results import ingest
+
+    src = BenzingResultsSource(client, sleep=lambda s: None)
+    ingest_all(session, src, ["AfrikaPro"])
+    session.commit()
+    best = session.scalar(select(Bird).where(Bird.ring_norm == "ZA26100000"))
+    before = (best.long_score, best.is_ace)
+    for se in session.scalars(select(Season)):
+        se.metrics_version = 1
+    best.long_score = 0.99  # as if worked out by older rules
+    n_requests = len(client.request_log)
+    assert ingest.recompute_stale_metrics(session) >= 1
+    assert len(client.request_log) == n_requests
+    assert (best.long_score, best.is_ace) == before
+    assert ingest.recompute_stale_metrics(session) == 0

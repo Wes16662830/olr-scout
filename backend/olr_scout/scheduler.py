@@ -129,6 +129,25 @@ def _rescore(s) -> None:
     s.commit()
 
 
+def job_recompute_metrics():
+    """After an update that changes how ratings are worked out: re-score the stored results."""
+    if not _results_lock.acquire(blocking=False):
+        return 0
+    try:
+        from .results.ingest import recompute_stale_metrics
+
+        with SessionLocal() as s:
+            n = recompute_stale_metrics(s)
+            if n:
+                log.info("re-scored %d stored seasons", n)
+                _rescore(s)
+            else:
+                s.commit()
+            return n
+    finally:
+        _results_lock.release()
+
+
 def job_nightly_results(olr_names: list[str] | None = None):
     if not _results_lock.acquire(blocking=False):
         log.info("skip results ingest: one is already running")
@@ -167,6 +186,7 @@ def start() -> BackgroundScheduler:
                       next_run_time=datetime.now(TZ) + timedelta(minutes=2))
     scheduler.add_job(job_nightly_results, CronTrigger(hour=2, minute=30, timezone=TZ), id="nightly",
                       max_instances=1, coalesce=True)
+    scheduler.add_job(job_recompute_metrics, "date", id="metrics", run_date=datetime.now(TZ) + timedelta(seconds=3))
     scheduler.start()
     # First full refresh shortly after start-up.
     from datetime import datetime, timedelta
