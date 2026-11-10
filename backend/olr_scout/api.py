@@ -838,6 +838,31 @@ def _open_browser_when_ready(port: int) -> None:
     threading.Thread(target=wait_and_open, daemon=True, name="open-browser").start()
 
 
+class ImmutableStatic(StaticFiles):
+    """Build files carry a content hash in their name, so they never change: cache for good."""
+
+    async def get_response(self, path, scope):
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        try:
+            resp = await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code == 404 and path.endswith(".js"):
+                # A page saved before an update asks for a script the update replaced: reload
+                # it once, which fetches the current page (no loop: once per browser tab).
+                return Response(STALE_PAGE_JS, media_type="text/javascript", headers={"Cache-Control": "no-store"})
+            raise
+        if resp.status_code == 200:
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+
+
+STALE_PAGE_JS = (
+    'try{if(!sessionStorage.getItem("olr-stale-reload")){sessionStorage.setItem("olr-stale-reload","1");'
+    'location.reload();}}catch(e){}'
+)
+
+
 def create_app(start_scheduler: bool | None = None) -> FastAPI:
     from contextlib import asynccontextmanager
 
@@ -869,13 +894,17 @@ def create_app(start_scheduler: bool | None = None) -> FastAPI:
 
     dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if dist.exists():
-        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        app.mount("/assets", ImmutableStatic(directory=dist / "assets"), name="assets")
+        # The page, service worker and manifest name the current build's files: browsers must
+        # check for a new copy every time, or after an update they keep loading a page that
+        # points at files the update deleted (blank screen, "index-….js 404").
+        fresh = {"Cache-Control": "no-cache"}
 
         @app.get("/{path:path}")
         def spa(path: str):
             f = dist / path
             if path and f.is_file():
-                return FileResponse(f)
-            return FileResponse(dist / "index.html")
+                return FileResponse(f, headers=fresh)
+            return FileResponse(dist / "index.html", headers=fresh)
 
     return app

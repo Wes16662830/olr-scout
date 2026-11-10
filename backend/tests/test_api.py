@@ -107,3 +107,23 @@ def test_best_race_conditions(session):
     assert out["best_speed"]["by"]["slow"]["races"] == 2  # thirds of 6 races: the 2 slowest
     assert [r["speed_class"] for r in out["races"]] == ["fast", "fast", "medium", "medium", "slow", "slow"]
     assert out["best_distance"]["best"] == "450 km +"
+
+
+def test_after_an_update_the_browser_never_keeps_a_stale_page(api, tmp_path):
+    """Seen live: after update-windows the browser reused its saved page, which named the
+    previous build's script (404) — a blank screen. The page must never be cached, and a
+    request for a replaced script reloads the page once."""
+    from pathlib import Path
+
+    dist = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+    if not (dist / "index.html").exists():
+        import pytest
+
+        pytest.skip("frontend not built")
+    assert api.get("/").headers["cache-control"] == "no-cache"
+    assert api.get("/sw.js").headers["cache-control"] == "no-cache"
+    built = next((dist / "assets").glob("*.js")).name
+    assert "immutable" in api.get(f"/assets/{built}").headers["cache-control"]
+    old = api.get("/assets/index-ChAW9hF7.js")
+    assert old.status_code == 200 and "location.reload" in old.text and old.headers["cache-control"] == "no-store"
+    assert api.get("/assets/missing.css").status_code == 404

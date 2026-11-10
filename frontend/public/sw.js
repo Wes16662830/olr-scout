@@ -1,6 +1,6 @@
 // OLR Scout service worker: app-shell cache + web push. API calls are never cached
 // (prices must be live).
-const SHELL = "olr-scout-shell-v2";
+const SHELL = "olr-scout-shell-v3";
 const BASE = new URL(self.registration.scope).pathname; // "/" locally, "/olr-scout/" on GitHub Pages
 
 self.addEventListener("install", (e) => {
@@ -16,8 +16,11 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.pathname.includes("/api/")) return;
+  // Pages are always asked for afresh (not from the browser's HTTP cache), so an update
+  // can't leave a saved page pointing at deleted files.
+  const page = e.request.mode === "navigate";
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, page ? { cache: "no-cache" } : undefined)
       .then((r) => {
         const copy = r.clone();
         caches.open(SHELL).then((c) => c.put(e.request, copy));
