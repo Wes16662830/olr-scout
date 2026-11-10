@@ -13,7 +13,7 @@ import time
 
 from ..config import settings
 from ..util.http import PoliteClient, SourceUnavailable
-from ..util.timeutil import parse_iso
+from ..util.timeutil import now_utc, parse_iso
 from .base import (
     FlightInfo,
     FlightResults,
@@ -23,6 +23,7 @@ from .base import (
     ResultsSource,
     SeasonInfo,
     TeamEntry,
+    mark_assumed_final,
 )
 from ..rings import normalise as normalise_ring
 from .nuxt import find_seasons, payload_from_html, seasons_from_nuxt2
@@ -193,6 +194,7 @@ class BenzingResultsSource(ResultsSource):
             )
         # Chronological; flights without a release time go last.
         out.sort(key=lambda x: (x.flown_at is None, x.flown_at.timestamp() if x.flown_at else 0, x.id))
+        mark_assumed_final(out, now_utc())
         return out
 
     # ----------------------------------------------------------------- results

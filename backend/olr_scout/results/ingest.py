@@ -12,7 +12,7 @@ from ..models import Bird, BirdResult, FamilyStat, Flight, Olr, Season, SourceHe
 from ..rings import normalise
 from ..scoring.tier_a import FlightIn, aggregate_families, family_key, field_size, season_metrics, shrunk_rate
 from ..util.timeutil import as_aware, now_utc
-from .base import BirdRecord, HealthError, RaceLine, ResultsSource
+from .base import BirdRecord, HealthError, RaceLine, ResultsSource, mark_assumed_final
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +24,8 @@ PROGRESS: dict = {}
 DATA_VERSION = 3  # 3: races were cut off at 1,000 rows before
 # Bump when the way ratings are worked out changes: stored results are re-scored, not re-downloaded.
 # 2: placings against the birds that started, consistency = top quarter, missed races slow.
-METRICS_VERSION = 2
+# 3: unnamed final = last + longest race; final counts 3× in the long score.
+METRICS_VERSION = 3
 
 # Editable in Settings → OLR registry. Seasons: year → Benzing season id.
 SEED_REGISTRY = [
@@ -245,6 +246,7 @@ def ingest_season(s: Session, src: ResultsSource, season: Season) -> dict:
 def recompute_metrics(s: Session, season: Season) -> int:
     """Work a season's bird ratings out again from the results already stored."""
     flights = list(season.flights)
+    mark_assumed_final(flights, now_utc())
     birds = list(s.scalars(select(Bird).where(Bird.season_id == season.id)))
     results: dict[int, dict[str, int]] = defaultdict(dict)
     speeds: dict[int, dict[str, float]] = defaultdict(dict)

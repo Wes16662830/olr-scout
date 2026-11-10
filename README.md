@@ -133,8 +133,13 @@ A higher tier always ranks above a lower one. Details:
 * Consistency (not defined in the brief, so chosen here): the share of the season's
   long and hard races the bird finished in the top quarter of the starters. (Top half
   was too easy: in AfrikaPro 2026 the best ~150 birds all scored the maximum.)
-* Speed: the bird's speed as a share of the winner's over the long races; a long race
-  it did not finish counts as 0, so missing hard races can't make a bird look fast.
+* Long score = average placing over the season's 5 longest races, with the final
+  counting 3 times. The final also has its own component.
+* Final: a race named "final"; otherwise (AfrikaPro 2026 just calls it "Race 10") the
+  last race, if it is also the longest and nothing has been flown for 14 days since.
+* Speed is not scored: average speed mostly reflects the day's wind and weather, and
+  placing already compares birds flying in the same conditions. It is still worked
+  out (a long race not finished counts as 0) for the "best conditions" display.
 * Components without data (no final flown, no family, no siblings) are left out
   and the other weights renormalised. Nothing is filled in with a guess.
 * Preferences: Love ×1.15, Like ×1.07, Neutral ×1, Avoid = excluded. Tier C stays ≤ 60

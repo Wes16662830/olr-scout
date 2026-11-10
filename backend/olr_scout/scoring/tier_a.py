@@ -21,10 +21,13 @@ FIELD_RATE = 0.05
 PRIOR_N = 20
 LONG_RACES = 5
 
-# Racing score weights (editable in Settings). hard / reliability / speed were added
-# after the brief: placing in high-loss races, arriving at all, and margin to the winner.
+# Racing score weights (editable in Settings). hard / reliability were added after the
+# brief: placing in high-loss races and arriving at all. Speed is not scored: it mostly
+# measures the day's wind and weather, and placing already compares birds on the same day.
 DEFAULT_WEIGHTS = {"long": 40.0, "hard": 15.0, "consistency": 10.0, "final": 10.0, "family": 10.0, "sibling": 5.0,
-                   "reliability": 5.0, "speed": 5.0}
+                   "reliability": 5.0}
+# In the long score (average placing over the longest races) the final counts this many times.
+FINAL_WEIGHT = 3.0
 # The bird's own results in the long and hard races, and its consistency across them,
 # always carry at least this share of the racing score — whatever data is missing and
 # whatever weights are set.
@@ -159,6 +162,7 @@ def season_metrics(
     long_ids = set(long_flight_ids(races))
     hard_ids = set(hard_flight_ids(races))
     finals = [f for f in races if f.is_final]
+    final_ids = {f.id for f in finals}
     speeds = speeds or {}
     winner_speed = {fid: max(v.values()) for fid, v in speeds.items() if v}
     out: dict[str, BirdMetrics] = {}
@@ -179,8 +183,10 @@ def season_metrics(
             m.positions[f.id] = pos
         if races:
             m.all_score = sum(m.percentiles.values()) / len(races)
-            longs = [m.percentiles[i] for i in long_ids] or list(m.percentiles.values())
-            m.long_score = sum(longs) / len(longs)
+            # Average placing over the longest races, the final counting FINAL_WEIGHT times.
+            ids = (long_ids | final_ids) or set(m.percentiles)
+            wts = {i: (FINAL_WEIGHT if i in final_ids else 1.0) for i in ids}
+            m.long_score = sum(m.percentiles[i] * w for i, w in wts.items()) / sum(wts.values())
             m.consistency = consistency(m.percentiles, long_ids | hard_ids)
         for f in finals:
             if m.positions.get(f.id) is not None:
@@ -322,7 +328,7 @@ def bid_score(
     family_ceiling: float = FAMILY_CEILING,
     hard_score: float | None = None,
     arrival_rate: float | None = None,
-    speed_pct: float | None = None,
+    speed_pct: float | None = None,  # not scored (see DEFAULT_WEIGHTS); kept for callers
 ) -> BidScore:
     """0–100. Components without data are left out and the remaining weights
     renormalised — nothing is filled in with a guess."""
@@ -343,8 +349,7 @@ def bid_score(
     else:
         missing.append("sibling")
     for key, value in (("hard", None if hard_score is None else 1.0 - hard_score),
-                       ("reliability", arrival_rate),
-                       ("speed", None if speed_pct is None else 1.0 - speed_pct)):
+                       ("reliability", arrival_rate)):
         if value is None:
             missing.append(key)
         else:

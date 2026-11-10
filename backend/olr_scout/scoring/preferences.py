@@ -69,6 +69,7 @@ def load(s: Session) -> dict:
                 prefs[k].update(v)
             else:
                 prefs[k] = v
+    prefs["weights"].pop("speed", None)  # no longer scored; drop it from saved settings
     return prefs
 
 

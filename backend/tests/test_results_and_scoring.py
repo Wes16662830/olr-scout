@@ -53,12 +53,14 @@ def test_family_key_and_shrinkage():
 
 def test_bid_score_weights_and_missing_components():
     full = bid_score(0.1, 0.8, 0.2, True, 0.2, [0.3], hard_score=0.25, arrival_rate=0.9, speed_pct=0.1)
-    w = {"long": 40, "hard": 15, "consistency": 10, "final": 10, "family": 10, "sibling": 5, "reliability": 5, "speed": 5}
+    # Speed is given but not scored.
+    w = {"long": 40, "hard": 15, "consistency": 10, "final": 10, "family": 10, "sibling": 5, "reliability": 5}
     parts = {"long": 0.9, "hard": 0.75, "consistency": 0.8, "final": 0.8, "family": 1.0, "sibling": 0.7,
-             "reliability": 0.9, "speed": 0.9}
-    assert full.score == pytest.approx(round(100 * sum(w[k] * parts[k] for k in w) / 100, 1))
+             "reliability": 0.9}
+    assert full.score == pytest.approx(round(100 * sum(w[k] * parts[k] for k in w) / sum(w.values()), 1))
+    assert "speed" not in full.components
     partial = bid_score(0.1, 0.8, None, False, None, None)
-    assert set(partial.missing) == {"final", "family", "sibling", "hard", "reliability", "speed"}
+    assert set(partial.missing) == {"final", "family", "sibling", "hard", "reliability"}
     assert partial.score == pytest.approx(round(100 * (40 * 0.9 + 10 * 0.8) / 50, 1))
 
 
@@ -426,3 +428,41 @@ def test_stored_seasons_are_rescored_without_downloading(session, client, web):
     assert len(client.request_log) == n_requests
     assert (best.long_score, best.is_ace) == before
     assert ingest.recompute_stale_metrics(session) == 0
+
+
+
+def test_final_counts_three_times_in_the_long_score():
+    flights = [FlightIn(i, 100 * i, arrived=100, basketed=100, race_no=i, is_final=(i == 6)) for i in range(1, 7)]
+    # A won every long race but flopped in the final; B was average but won the final.
+    res = {i: {"A": 1, "B": 50} for i in range(1, 6)}
+    res[6] = {"A": 90, "B": 1}
+    m = season_metrics(flights, res)
+    # Long races: the 5 longest (2..6), the final (6) counting 3 times: weights 1,1,1,1,3.
+    assert m["A"].long_score == pytest.approx((4 * 0.01 + 3 * 0.90) / 7)
+    assert m["B"].long_score == pytest.approx((4 * 0.50 + 3 * 0.01) / 7)
+
+
+def test_unnamed_final_is_the_last_longest_race_once_the_season_is_over():
+    from datetime import timedelta
+
+    from olr_scout.results.base import FlightInfo, mark_assumed_final
+    from olr_scout.util.timeutil import now_utc
+
+    def season(days_ago_last, last_km=601):
+        return [FlightInfo(1, "Training 1", 50, now_utc() - timedelta(days=90), is_training=True),
+                FlightInfo(2, "Race 9", 509, now_utc() - timedelta(days=days_ago_last + 7)),
+                FlightInfo(3, "Race 10", last_km, now_utc() - timedelta(days=days_ago_last))]
+
+    done = season(30)  # AfrikaPro 2026: Race 10, 601 km, a month ago, nothing since
+    mark_assumed_final(done, now_utc())
+    assert [f.name for f in done if f.is_final] == ["Race 10"]
+    racing = season(3)  # flown 3 days ago: the season may go on
+    mark_assumed_final(racing, now_utc())
+    assert not any(f.is_final for f in racing)
+    shorter = season(30, last_km=400)  # last race isn't the longest: not a final
+    mark_assumed_final(shorter, now_utc())
+    assert not any(f.is_final for f in shorter)
+    named = season(30)
+    named[1].name, named[1].is_final = "Final", True  # a named final is never overridden
+    mark_assumed_final(named, now_utc())
+    assert [f.name for f in named if f.is_final] == ["Final"]

@@ -147,7 +147,8 @@ export default function Settings() {
         ))}</div>
         <h2>Racing score weights (Tier A)</h2>
         <p className="small muted">The bird's own results lead: <b>long + hard + consistency</b> (consistency = share of
-          the long and hard races finished in the top quarter of the birds that started) always make up at least 60% of the racing score, even when other data
+          the long and hard races finished in the top quarter of the birds that started; long = average
+          placing over the 5 longest races, the final counting 3×; speed is not scored) always make up at least 60% of the racing score, even when other data
           is missing. Settings that would break this are not saved.</p>
         <div className="row wrap">{Object.entries(p.weights).map(([k, v]) => (
           <label key={k}>{k} <input type="number" value={v} onChange={(e) => setP({ ...p, weights: { ...p.weights, [k]: Number(e.target.value) } })} /></label>
