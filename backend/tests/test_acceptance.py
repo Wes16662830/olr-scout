@@ -239,17 +239,19 @@ def test_ring_of_a_relative_never_brings_its_race_results(session):
     assert real.bird_id is not None and real.tier == "A"
 
 
-def test_lot_16_foreign_ring_written_in_full_wins_over_an_old_title_ring(session):
-    """Seen live (AfrikaPro Auction 4, lot 16): the title has ZA21 ABL 344 and the bird's own
-    ring BULGARIA-25-60582. 'BULGARIA' wasn't known as a country, so the 2021 ring was taken
-    as the bird's and the card warned of a loose match. The auction name carries no year."""
+def test_lot_16_first_ring_is_the_bird_second_is_its_sire(session):
+    """Seen live (AfrikaPro Auction 4, lot 16): the bird on sale is BULGARIA-25-60582, its sire
+    ZA21 ABL 344. 'BULGARIA' wasn't known as a country, so the sire's ring was stored as the
+    bird's and the card warned of a loose match. Titles put the bird first, the sire second."""
     make_season(session, "AfrikaPro", 2026, {"BULGARIA-25-60582": ("Valya & Rosen Dobrevi", GOOD)})
-    lot = make_lot(session, 16, auction_id="afp4", title="Lot 16 ZA21 ABL 344 BULGARIA-25-60582",
+    lot = make_lot(session, 16, auction_id="afp4", title="Lot 16 BULGARIA-25-60582 Unpredictable Valya ZA21 ABL 344",
                    ring_raw="ZA21 ABL 344", olr_tag="AfrikaPro", olr_year=None, current_bid=1500)
     engine.score_all(session)
     assert lot.ring_raw == "BULGARIA-25-60582"
     assert lot.bird is not None and lot.bird.ring_raw == "BULGARIA-25-60582"
     assert lot.match_confidence == "exact" and lot.tier == "A"
+    claims = {c.ring_norm: c.relation for c in session.scalars(select(AncestorClaim).where(AncestorClaim.lot_id == lot.id))}
+    assert claims == {"ZA21ABL344": "sire"}
     # Written with the code instead of the name, it is the same bird.
     other = make_lot(session, 17, auction_id="x", lot_key="l17", title="Lot 17 BG-25-60582", ring_raw="BG-25-60582")
     engine.score_all(session, [other])

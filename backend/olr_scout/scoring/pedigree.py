@@ -99,22 +99,38 @@ NOT_ANCESTORS = ("related", "sibling")  # named in the text, but not in the bird
 _PAIRING = re.compile(r"(?:^|\s)[x×](?:\s|$)", re.I)
 
 
-def fits_season(ring, season_year: int | None) -> bool:
-    """A bird racing an OLR season carries a ring of that year or the year before."""
-    return bool(season_year and ring is not None and ring.year in (season_year - 1, season_year))
-
-
-def own_ring(text: str | None, season_year: int | None = None):
-    """The bird's own ring in a lot title: the first ring that no relation word introduces
-    ("son of", "sire", "full brother to", "nestmate"…) and that is not one half of a pairing
-    ("ZA-21-… x ZA-20-…"). With ``season_year`` (the OLR season the lot is sold from), a ring
-    of that season's age is preferred: "ZA21 ABL 344 … BULGARIA-25-60582" in an AfrikaPro 2026
-    sale is the Bulgarian bird; a 2021 ring can't have raced 2026. None if every ring in the
-    title names a relative."""
+def own_ring(text: str | None):
+    """The bird's own ring in a lot title. Auction titles put the bird on sale first and
+    usually its sire second ("SA-26-1146 … ZA 24-GPU-9161"), so this is the first ring —
+    unless a relation word introduces it ("son of", "sire", "full brother to"…) or it is
+    half of a pairing ("ZA-21-… x ZA-20-…"). None if every ring in the title names a relative."""
     found = _own_rings(text)
-    if not found:
-        return None
-    return next((r for r in found if fits_season(r, season_year)), found[0])
+    return found[0] if found else None
+
+
+def title_parents(text: str | None) -> dict[str, str]:
+    """Normalised ring → "sire" / "dam" for the rings after the bird's own in a title: the
+    second ring is usually the sire; "ring x ring" is sire x dam. Rings a word introduces
+    keep that word's meaning (left to extract_claims)."""
+    own = own_ring(text)
+    if not text or own is None:
+        return {}
+    up = text.upper()
+    located = sorted((up.find(r.raw.upper()), r) for r in find_rings(text) if up.find(r.raw.upper()) >= 0)
+    start = next((i for i, (_, r) in enumerate(located) if r.raw == own.raw), None)
+    if start is None or start + 1 >= len(located):
+        return {}
+    out: dict[str, str] = {}
+    pos, sire = located[start + 1]
+    before = text[located[start][0] + len(own.raw):pos]
+    if any(p.search(before) and rel not in ("sire", "parent") for p, rel in RELATION_WORDS):
+        return {}  # "full brother to …", "grandson of …": not the sire
+    out[normalise(sire.raw)] = "sire"
+    if start + 2 < len(located):
+        pos2, dam = located[start + 2]
+        if _PAIRING.search(text[pos + len(sire.raw):pos2]):
+            out[normalise(dam.raw)] = "dam"
+    return out
 
 
 def _own_rings(text: str | None) -> list:

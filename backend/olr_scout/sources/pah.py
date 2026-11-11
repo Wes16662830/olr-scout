@@ -61,7 +61,7 @@ class PigeonAuctionHouseSource(AuctionSource):
                       lot_no=lot_number(p.title), current_bid=p.price if p.price_kind != "starting" else None,
                       starting_bid=p.price if p.price_kind == "starting" else None, image_url=p.image_url,
                       olr_tag=auction.olr_tag)
-            ring = own_ring(p.title, auction.olr_year)  # not a relative the title names
+            ring = own_ring(p.title)  # first ring in the title, not a relative it names
             if ring:
                 lot.ring_raw, lot.ring_norm, lot.year = ring.raw, normalise(ring.raw), ring.year
                 lot.sex = (parse_ring(p.title) or ring).sex

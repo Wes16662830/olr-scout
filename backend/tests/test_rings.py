@@ -117,3 +117,14 @@ def test_ring_formats_seen_in_afrikapro_2026_results():
     for a, b in same.items():
         assert parse_ring(a) is not None and parse_ring(a).canonical == parse_ring(b).canonical, a
     assert parse_ring("flew at 25 km 300 today") is None  # prose is not a ring
+
+
+def test_title_bird_first_sire_second():
+    from olr_scout.scoring.pedigree import own_ring, title_parents
+
+    t = "Lot 16 BULGARIA-25-60582 Unpredictable Valya ZA21 ABL 344"
+    assert own_ring(t).raw == "BULGARIA-25-60582" and title_parents(t) == {"ZA21ABL344": "sire"}
+    assert title_parents("Lot 74 SA-26-1146 son of ZA 24-GPU-9161") == {"ZA24GPU9161": "sire"}
+    assert title_parents("Lot 9 ZA-26-ABC-1234 ZA-23-PORT-111 x ZA-22-PORT-222") == {
+        "ZA23PORT111": "sire", "ZA22PORT222": "dam"}
+    assert title_parents("Lot 3 ZA-26-ABC-1234 full brother to ZA-24-GPU-9161") == {}  # a sibling, not the sire
