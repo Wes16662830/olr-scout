@@ -71,9 +71,10 @@ _RE_FULL = re.compile(
 _RE_LCYN = re.compile(
     r"\b(?P<country>[A-Z]{2,9})[\s\-/.]+(?P<club>[A-Z])[\s\-/.]+(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<number>\d{2,8})\b"
 )
-# ZA-25-CRU DERBY-3175 | ZA-25-LOFT EINKAMERER-197: a club of two or three words, between dashes
+# ZA-25-CRU DERBY-3175 | ZA-25-EC/DRPC-837 | PL-25-FC-ZP-1050689 | CU-25-O&L-6460: a club of two or
+# three parts, between dashes
 _RE_WORDCLUB = re.compile(
-    r"\b(?P<country>[A-Z]{2,9})-(?P<year>(?:19|20)\d{2}|\d{2})-(?P<club>[A-Z]{2,12}(?: [A-Z]{2,12}){1,2})-(?P<number>\d{1,8})\b"
+    r"\b(?P<country>[A-Z]{2,9})-(?P<year>(?:19|20)\d{2}|\d{2})-(?P<club>[A-Z]{1,12}(?:[ /&-][A-Z]{1,12}){1,2})-(?P<number>\d{1,8})\b"
 )
 # PL-25-0400-3205: country, year, numeric club, number
 _RE_NUMCLUB = re.compile(
@@ -140,7 +141,7 @@ def parse_ring(text: str | None, default_year: int | None = None) -> Ring | None
                 found.append((m.start(), prio, Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"),
                                                     m.group("number"), sex)))
             elif m.group("country") in _COUNTRIES and (rx in (_RE_NUMCLUB, _RE_CYN) or m.group("club") not in _NOT_CLUBS):
-                club = None if rx is _RE_CYN else m.group("club").replace(" ", "")
+                club = None if rx is _RE_CYN else re.sub(r"[ /&-]", "", m.group("club"))
                 found.append((m.start(), prio, Ring(m.group(0), m.group("country"), _year4(m.group("year")), club,
                                                     m.group("number"), sex)))
                 break  # later matches of this format start further on
@@ -176,7 +177,7 @@ def find_rings(text: str | None) -> list[Ring]:
     for rx in (_RE_WORDCLUB, _RE_LCYN):
         for m in _scan(rx, t):
             if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
-                add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club").replace(" ", ""),
+                add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), re.sub(r"[ /&-]", "", m.group("club")),
                             m.group("number")))
     for m in _scan(_RE_FULL, t):
         if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:

@@ -22,7 +22,10 @@ RELATION_WORDS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(?:sire|father|vader|vater|vader\s*:)\b|\bs\s*:", re.I), "sire"),
     (re.compile(r"\b(?:dam|mother|moeder|mutter)\b|\bd\s*:", re.I), "dam"),
     (re.compile(r"\b(?:son|daughter|seun|dogter|child|kind|direct\s+from|out\s+of|uit)\s+(?:of|van)?\b", re.I), "parent"),
-    (re.compile(r"\b(?:(?:full|half|halwe)[\s-]*)?(?:brother|sister|broer|suster|sibling|nest\s*-?\s*mate)s?\s*(?:of|to|van)?\b",
+    # Sibling only with "full/half …", "… of/to …" or nestmate: a team called "Alpdağ Brothers"
+    # is not a relation.
+    (re.compile(r"\b(?:full|half|halwe)[\s-]*(?:brother|sister|broer|suster|sibling)s?\b"
+                r"|\b(?:brother|sister|broer|suster|sibling)s?\s+(?:of|to|van)\b|\bnest\s*-?\s*mates?\b",
                 re.I), "sibling"),
     (re.compile(r"\b(?:grand\s*sire|grand\s*father|grootvader)\b", re.I), "grandparent"),
     (re.compile(r"\b(?:grand\s*dam|grand\s*mother|grootmoeder)\b", re.I), "grandparent"),

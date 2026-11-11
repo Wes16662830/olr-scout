@@ -128,3 +128,14 @@ def test_title_bird_first_sire_second():
     assert title_parents("Lot 9 ZA-26-ABC-1234 ZA-23-PORT-111 x ZA-22-PORT-222") == {
         "ZA23PORT111": "sire", "ZA22PORT222": "dam"}
     assert title_parents("Lot 3 ZA-26-ABC-1234 full brother to ZA-24-GPU-9161") == {}  # a sibling, not the sire
+
+
+def test_auction_4_titles_live():
+    """AfrikaPro Auction 4 titles that were unreadable: a team named 'Brothers' read as a
+    sibling, and clubs with a slash or two parts."""
+    from olr_scout.scoring.pedigree import own_ring
+
+    assert own_ring("LOT 18 AFRIKAPRO AUCTION 4-Alpdağ Brothers-TR-25-34-10366 -SIRE: TR-23-36219").raw == "TR-25-34-10366"
+    assert own_ring("LOT 121 AFRIKAPRO AUCTION 4-P & C Loft-ZA-25-EC/DRPC-837 —45TH FINAL").raw == "ZA-25-EC/DRPC-837"
+    assert own_ring("LOT 73 AFRIKAPRO AUCTION 4-Mazepa-PL-25-FC-ZP-1050689 -Sire · PL-FC-ZP-22-1050737").raw == "PL-25-FC-ZP-1050689"
+    assert own_ring("Lot 76 Full sister to ZA 24-GPU-9161") is None
