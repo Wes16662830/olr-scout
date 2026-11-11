@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup, Tag
@@ -197,9 +197,15 @@ def parse_product_page(html: str, base_url: str, hints: list[str] | None = None)
     page.title = clean_text(t.get_text(" ", strip=True)) if t else None
     page.summary_text = clean_text(summary.get_text("\n", strip=True)) or ""
 
-    # End time: "Auction ends: October 28, 2026 14:02" (local time).
+    # End time. Best: the countdown's own timestamp (seconds since 1970, UTC), e.g.
+    # <div class="auction-time-countdown" data-time="1794749760">. Else the text
+    # "Auction ends: 15th November 2026 15:36" / "October 28, 2026 14:02" (local time).
+    cd = s.select_one("[data-time].countdown, .countdown[data-time], [class*=countdown][data-time]")
+    if cd is not None and str(cd.get("data-time", "")).isdigit():
+        page.ends_at = datetime.fromtimestamp(int(cd["data-time"]), tz=timezone.utc)
+        page.ends_at_text = "countdown"
     full = s.get_text("\n", strip=True)
-    for text in (page.summary_text, full):
+    for text in ((page.summary_text, full) if page.ends_at is None else ()):
         m = _ENDS.search(text or "")
         if m:
             snippet = text[m.end(): m.end() + 80]

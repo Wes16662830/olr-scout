@@ -201,3 +201,24 @@ def test_blocked_message_says_what_was_seen(web):
     with pytest.raises(SourceBlocked) as e:
         c.get("https://afripigeon.com/api/auctions/active")
     assert str(e.value) == "afripigeon.com: HTTP 403, server nginx (access refused) — /api/auctions/active"
+
+
+def test_top_pigeon_end_time_and_bid_dates_as_written_live():
+    """Live Top Pigeon pages (Nov 2026) write '15th November 2026 15:36' and carry a countdown
+    timestamp; both were missed, so cards said 'end time unknown'."""
+    from datetime import datetime, timezone
+
+    from olr_scout.sources.woo import parse_product_page
+    from olr_scout.util.timeutil import parse_local_datetime
+
+    assert parse_local_datetime("15th November 2026  15:36") == datetime(2026, 11, 15, 13, 36, tzinfo=timezone.utc)
+    assert parse_local_datetime("1st November 2026 19:50") == datetime(2026, 11, 1, 17, 50, tzinfo=timezone.utc)
+    html = """<html><body><div class="product"><div class="summary entry-summary">
+      <h1 class="product_title">LOT 49 AFRIKAPRO AUCTION 4-Tom Van Gaver BE-25-4186816</h1>
+      <p class="auction-end">Auction ends: 15th November 2026  15:36</p>
+      <div class="auction-time-countdown countdown" data-time="1794749760" data-auctionid="83006"></div>
+    </div></div></body></html>"""
+    page = parse_product_page(html, "https://toppigeon.co.za")
+    assert page.ends_at == datetime.fromtimestamp(1794749760, tz=timezone.utc)
+    text_only = html.replace(' data-time="1794749760"', "")
+    assert parse_product_page(text_only, "https://toppigeon.co.za").ends_at == datetime(2026, 11, 15, 13, 36, tzinfo=timezone.utc)

@@ -89,6 +89,8 @@ def parse_local_datetime(text: str | None) -> datetime | None:
     if not text:
         return None
     t = " ".join(str(text).split())
+    # "15th November 2026 15:36" (Top Pigeon): drop the ordinal ending.
+    t = re.sub(r"\b(\d{1,2})(?:st|nd|rd|th)\b", r"\1", t, flags=re.I)
     for pat in _DATE_PATTERNS:
         m = pat.search(t)
         if not m:
