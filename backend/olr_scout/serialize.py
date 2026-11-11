@@ -222,6 +222,10 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
     sess = object_session(lot)
     if sess is not None:
         card["bird"] = bird_summary(sess, lot.bird) if (tier == "A" and lot.bird is not None) else None
+        if card["bird"]:
+            from . import jackets
+
+            card["bird"]["jackets"] = jackets.for_bird(lot.bird.season.olr.name, lot.bird.season.year, lot.bird.ring_raw)
         card["lineage"] = parents(sess, lot, prefs)
         card["last_bid"] = last_bid(sess, lot)
         from .mybids import my_bid

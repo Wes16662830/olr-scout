@@ -256,3 +256,17 @@ def test_lot_16_first_ring_is_the_bird_second_is_its_sire(session):
     other = make_lot(session, 17, auction_id="x", lot_key="l17", title="Lot 17 BG-25-60582", ring_raw="BG-25-60582")
     engine.score_all(session, [other])
     assert other.bird_id == lot.bird_id
+
+
+def test_afrikapro_jackets_on_the_card(session):
+    """Official AfrikaPro 2026 final jacket places appear with the bird's race results."""
+    from olr_scout.serialize import lot_card
+
+    make_season(session, "AfrikaPro", 2026, {"ZA-25-212420": ("Team", GOOD), "ZA-25-AAA-1": ("Other", GOOD)})
+    lot6 = make_lot(session, 6, ring_raw="ZA-25-212420", olr_tag="AfrikaPro", current_bid=1500)
+    other = make_lot(session, 7, lot_key="l7", ring_raw="ZA-25-AAA-1", olr_tag="AfrikaPro", current_bid=1000)
+    engine.score_all(session)
+    prefs = preferences.load(session)
+    j = lot_card(lot6, prefs)["bird"]["jackets"]
+    assert j["season_year"] == 2026 and j["final"] and j["places"] == {"blue": 38, "brown": 53, "green": 266}
+    assert lot_card(other, prefs)["bird"]["jackets"]["places"] == {}  # outside the top 375

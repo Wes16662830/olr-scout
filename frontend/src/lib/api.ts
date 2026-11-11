@@ -92,7 +92,12 @@ export interface LotCard {
 
 export interface RaceChip { label: string; name: string; km: number | null; position: number | null; arrived: number | null; basketed?: number | null; behind_min?: number | null; pct: number | null; long: boolean; final: boolean;
   winner_speed?: number | null; speed_class?: string | null; distance_band?: string | null }
+export interface Jackets {
+  olr: string; season_year: number; final: boolean; top: number; source: string; captured: string;
+  places: { blue?: number; green?: number; brown?: number };
+}
 export interface BirdSummary {
+  jackets?: Jackets | null;
   ring: string; name: string | null; colour: string | null; sex: string | null;
   breeder: string | null; breeder_country: string | null; olr: string; season: number; registered: number | null;
   races: RaceChip[]; arrived_in: number; race_count: number;

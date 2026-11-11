@@ -130,3 +130,8 @@ tr.mine-bid td { background: rgba(180, 83, 9, .08); }
 input.narrow { width: 90px; }
 .warnline { background: #fef3c7; color: #78350f; padding: 3px 6px; border-radius: 4px; }
 .watch-group { margin: 14px 0 6px; font-size: 16px; }
+.jackets { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.jacket { border-radius: 4px; padding: 0 6px; font-size: 12px; border: 1px solid; }
+.jacket-blue { border-color: #3b82f6; color: #1d4ed8; } .jacket-green { border-color: #16a34a; color: #15803d; }
+.jacket-brown { border-color: #a16207; color: #92400e; } .jacket.top { font-weight: 700; }
+@media (prefers-color-scheme: dark) { .jacket-blue { color: #93c5fd; } .jacket-green { color: #86efac; } .jacket-brown { color: #fcd34d; } }

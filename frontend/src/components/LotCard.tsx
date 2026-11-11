@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { api, RaceChip, BirdSummary, Breeding, Lineage, LotCard as Lot } from "../lib/api";
+import { api, RaceChip, BirdSummary, Jackets, Breeding, Lineage, LotCard as Lot } from "../lib/api";
 import { countdown, pct, useNow, when, zar } from "../lib/format";
 
 const TIER_TEXT: Record<string, string> = {
@@ -93,7 +93,33 @@ function BirdBlock({ b, seller, lot }: { b: BirdSummary; seller: string | null; 
         {b.hard_score !== null && ` · hardest races avg top ${pct(b.hard_score)}`}
         {b.speed_index !== null && ` · ${(b.speed_index * 100).toFixed(1)}% of winner's speed (long races)`}
       </div>
+      <JacketLine j={b.jackets} />
       <Conditions b={b} />
+    </div>
+  );
+}
+
+const JACKET_TEXT: [keyof Jackets["places"], string, string][] = [
+  ["blue", "Blue", "Ace pigeon over all races"], ["brown", "Brown", "endurance, races 6–10"], ["green", "Green", "sprint, races 1–5"],
+];
+
+/** The bird's official jacket places (AfrikaPro final standings), top first. */
+function JacketLine({ j }: { j?: Jackets | null }) {
+  if (!j) return null;
+  const placed = JACKET_TEXT.filter(([k]) => j.places[k]);
+  const title = `${j.olr} ${j.season_year} ${j.final ? "final " : ""}jacket standings (top ${j.top} of each), from the official rankings, ${j.captured}. `
+    + JACKET_TEXT.map(([, n, d]) => `${n}: ${d}`).join("; ");
+  return (
+    <div className="small jackets" title={title}>
+      <span className="label">{j.olr} {j.season_year} jackets:</span>{" "}
+      {placed.length === 0 ? <span className="muted">outside the top {j.top} of Blue, Brown and Green</span> : (
+        <>
+          {placed.map(([k, n]) => (
+            <span key={k} className={`jacket jacket-${k}${(j.places[k] ?? 999) <= 50 ? " top" : ""}`}>{n} {ordinal(j.places[k]!)}</span>
+          ))}
+          {placed.length < 3 && <span className="muted"> · {JACKET_TEXT.filter(([k]) => !j.places[k]).map(([, n]) => n).join(", ")} outside top {j.top}</span>}
+        </>
+      )}
     </div>
   );
 }
