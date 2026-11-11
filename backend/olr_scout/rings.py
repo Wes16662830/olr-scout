@@ -43,7 +43,7 @@ class Ring:
     def canonical(self) -> str:
         """A normalised form built from parts (country+yy+club+number) when known."""
         parts = [
-            self.country or "",
+            COUNTRY_ALIAS.get(self.country or "", self.country or ""),
             f"{self.year % 100:02d}" if self.year else "",
             self.club or "",
             str(self.number_int) if self.number_int is not None else (self.number or ""),
@@ -87,6 +87,11 @@ _COUNTRIES = {
 }
 
 
+# Local spellings of a country code → the one the results sites use ("SA-26-1146" is
+# ZA-26-1146 in the AfrikaPro results).
+COUNTRY_ALIAS = {"SA": "ZA", "RSA": "ZA", "BEL": "BE", "BELG": "BE", "NED": "NL", "GBR": "GB", "FRA": "FR"}
+
+
 def _scan(rx: re.Pattern, t: str):
     """Like ``rx.finditer`` but a match the caller rejects doesn't hide one starting inside
     it: "LOT 74 - ZA 26-ABC-1234" first matches "LOT 74 - ZA 26" (LOT is no country), and
@@ -106,18 +111,21 @@ def parse_ring(text: str | None, default_year: int | None = None) -> Ring | None
     sm = SEX_MARK.search(t)
     if sm:
         sex = _SEX_MAP.get(sm.group(1).upper())
-    m = _RE_DV.search(t)
-    if m:
-        return Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"), m.group("number"), sex)
-    for m in _scan(_RE_FULL, t):
-        if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
-            return Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number"), sex)
-    for m in _scan(_RE_NUMCLUB, t):
-        if m.group("country") in _COUNTRIES:
-            return Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number"), sex)
-    for m in _scan(_RE_CYN, t):
-        if m.group("country") in _COUNTRIES:
-            return Ring(m.group(0), m.group("country"), _year4(m.group("year")), None, m.group("number"), sex)
+    # The FIRST ring in the text, whatever its format: "Lot 74 SA-26-1146 son of ZA 24-GPU-9161"
+    # is SA-26-1146 (a fuller-looking ring later on used to win). Same start: fuller format wins.
+    found: list[tuple[int, int, Ring]] = []
+    for prio, rx in enumerate((_RE_DV, _RE_FULL, _RE_NUMCLUB, _RE_CYN)):
+        for m in _scan(rx, t):
+            if rx is _RE_DV:
+                found.append((m.start(), prio, Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"),
+                                                    m.group("number"), sex)))
+            elif m.group("country") in _COUNTRIES and (rx is not _RE_FULL or m.group("club") not in _NOT_CLUBS):
+                club = None if rx is _RE_CYN else m.group("club")
+                found.append((m.start(), prio, Ring(m.group(0), m.group("country"), _year4(m.group("year")), club,
+                                                    m.group("number"), sex)))
+                break  # later matches of this format start further on
+    if found:
+        return min(found, key=lambda x: (x[0], x[1]))[2]
     m = _RE_NUM_CLUB.match(t) or _RE_CLUB_NUM.match(t)
     if m and m.group("club") not in _NOT_CLUBS:
         return Ring(m.group(0).strip(), None, default_year, m.group("club"), m.group("number"), sex)

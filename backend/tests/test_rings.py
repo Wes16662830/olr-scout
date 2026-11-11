@@ -90,3 +90,16 @@ def test_own_ring_skips_relatives_and_pairings():
     assert own("Nestmate of ZA 24-GPU-9161") is None
     assert own("ZA 24-GPU-9161 x ZA 23-CRU-1111") is None  # a pairing: the parents
     assert own("Lot 9 ZA 2026 PORT 7829 (C)") == "ZA 2026 PORT 7829"
+
+
+def test_first_ring_wins_and_sa_is_za():
+    """Lot 74 (AfrikaPro Auction 4): own ring SA-26-1146, title also names ZA 24-GPU-9161."""
+    from olr_scout.rings import ResultRing, RingIndex, parse_ring
+    from olr_scout.scoring.pedigree import own_ring
+
+    title = "Lot 74 SA-26-1146 son of ZA 24-GPU-9161"
+    assert parse_ring(title).raw == "SA-26-1146"  # the fuller-looking ring later on no longer wins
+    assert own_ring(title).raw == "SA-26-1146"
+    assert parse_ring("SA-26-1146").canonical == parse_ring("ZA-26-1146").canonical
+    idx = RingIndex([ResultRing(1, "ZA261146", "ZA-26-1146")])
+    assert idx.match("SA-26-1146", []).bird_id == 1
