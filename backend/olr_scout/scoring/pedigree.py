@@ -99,12 +99,27 @@ NOT_ANCESTORS = ("related", "sibling")  # named in the text, but not in the bird
 _PAIRING = re.compile(r"(?:^|\s)[x×](?:\s|$)", re.I)
 
 
-def own_ring(text: str | None):
+def fits_season(ring, season_year: int | None) -> bool:
+    """A bird racing an OLR season carries a ring of that year or the year before."""
+    return bool(season_year and ring is not None and ring.year in (season_year - 1, season_year))
+
+
+def own_ring(text: str | None, season_year: int | None = None):
     """The bird's own ring in a lot title: the first ring that no relation word introduces
     ("son of", "sire", "full brother to", "nestmate"…) and that is not one half of a pairing
-    ("ZA-21-… x ZA-20-…"). None if every ring in the title names a relative."""
-    if not text:
+    ("ZA-21-… x ZA-20-…"). With ``season_year`` (the OLR season the lot is sold from), a ring
+    of that season's age is preferred: "ZA21 ABL 344 … BULGARIA-25-60582" in an AfrikaPro 2026
+    sale is the Bulgarian bird; a 2021 ring can't have raced 2026. None if every ring in the
+    title names a relative."""
+    found = _own_rings(text)
+    if not found:
         return None
+    return next((r for r in found if fits_season(r, season_year)), found[0])
+
+
+def _own_rings(text: str | None) -> list:
+    if not text:
+        return []
     up = text.upper()
     located = []
     for r in find_rings(text):
@@ -112,6 +127,7 @@ def own_ring(text: str | None):
         if pos >= 0:
             located.append((pos, r))
     located.sort(key=lambda x: x[0])
+    out = []
     for i, (pos, r) in enumerate(located):
         before = text[(located[i - 1][0] + len(located[i - 1][1].raw)) if i else 0:pos]
         after = text[pos + len(r.raw):located[i + 1][0] if i + 1 < len(located) else len(text)]
@@ -119,8 +135,8 @@ def own_ring(text: str | None):
             continue
         if (i and _PAIRING.search(before)) or (i + 1 < len(located) and _PAIRING.search(after)):
             continue
-        return r
-    return None
+        out.append(r)
+    return out
 
 
 DOCUMENT_ORIGINS = ("pdf", "ocr")

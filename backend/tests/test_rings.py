@@ -103,3 +103,17 @@ def test_first_ring_wins_and_sa_is_za():
     assert parse_ring("SA-26-1146").canonical == parse_ring("ZA-26-1146").canonical
     idx = RingIndex([ResultRing(1, "ZA261146", "ZA-26-1146")])
     assert idx.match("SA-26-1146", []).bird_id == 1
+
+
+def test_ring_formats_seen_in_afrikapro_2026_results():
+    from olr_scout.rings import parse_ring
+
+    same = {
+        "BULGARIA-25-60582": "BG-25-60582", "QATAR-26-2112": "QA-26-2112", "MAROC-25-81608": "MA-25-81608",
+        "HUNG-25-01-24670": "HU-25-01-24670", "SLOVENIJA-25-107-5764": "SI-25-107-5764",
+        "ZA-25-CRU DERBY-3175": "ZA 25 CRUDERBY 3175", "GB-A-25-79641": "GB-25-A-79641",
+        "(ZA)-(26)-TURFPET-12622": "ZA-26-TURFPET-12622", "ZA-25-SFM-5": "ZA 2025 SFM 5",
+    }
+    for a, b in same.items():
+        assert parse_ring(a) is not None and parse_ring(a).canonical == parse_ring(b).canonical, a
+    assert parse_ring("flew at 25 km 300 today") is None  # prose is not a ring

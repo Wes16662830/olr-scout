@@ -88,7 +88,7 @@ class TopPigeonSource(AuctionSource):
                 lot.olr_tag = olr or auction.olr_tag
                 lot.olr_year = year or auction.olr_year
                 # The bird's own ring: not a relative the title names ("Son of ZA-24-…").
-                ring = own_ring(p.title)
+                ring = own_ring(p.title, lot.olr_year)
                 if ring:
                     lot.ring_raw, lot.year = ring.raw, ring.year
                     lot.sex = (parse_ring(p.title) or ring).sex
@@ -132,7 +132,7 @@ class TopPigeonSource(AuctionSource):
             lot.ring_raw, lot.ring_norm = field_ring.raw, normalise(field_ring.raw)
             lot.year = field_ring.year or lot.year
         elif not lot.ring_raw:
-            ring = own_ring(page.summary_text)
+            ring = own_ring(page.summary_text, lot.olr_year)
             if ring:
                 lot.ring_raw, lot.ring_norm, lot.year = ring.raw, normalise(ring.raw), lot.year or ring.year
         if lot.lot_no is None:

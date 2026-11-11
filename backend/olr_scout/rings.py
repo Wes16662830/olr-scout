@@ -65,14 +65,22 @@ _SEX_MAP = {"C": "cock", "COCK": "cock", "V": "hen", "W": "hen", "H": "hen", "HE
 
 # ZA 2026 PORT 7829 (C)  |  ZA-26-PORT-7829
 _RE_FULL = re.compile(
-    r"\b(?P<country>[A-Z]{2,3})[\s\-/.]*(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<club>[A-Z]{2,6})[\s\-/.]*(?P<number>\d{2,8})\b"
+    r"\b(?P<country>[A-Z]{2,9})[\s\-/.()]*(?P<year>(?:19|20)\d{2}|\d{2})\)?[\s\-/.]+(?P<club>[A-Z]{1,8})[\s\-/.]*(?P<number>\d{1,8})\b"
+)
+# GB-A-25-79641: a club letter before the year
+_RE_LCYN = re.compile(
+    r"\b(?P<country>[A-Z]{2,9})[\s\-/.]+(?P<club>[A-Z])[\s\-/.]+(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<number>\d{2,8})\b"
+)
+# ZA-25-CRU DERBY-3175 | ZA-25-LOFT EINKAMERER-197: a club of two or three words, between dashes
+_RE_WORDCLUB = re.compile(
+    r"\b(?P<country>[A-Z]{2,9})-(?P<year>(?:19|20)\d{2}|\d{2})-(?P<club>[A-Z]{2,12}(?: [A-Z]{2,12}){1,2})-(?P<number>\d{1,8})\b"
 )
 # PL-25-0400-3205: country, year, numeric club, number
 _RE_NUMCLUB = re.compile(
-    r"\b(?P<country>[A-Z]{2,3})[\s\-/.]*(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<club>\d{2,5})[\s\-/.]+(?P<number>\d{1,8})\b"
+    r"\b(?P<country>[A-Z]{2,9})[\s\-/.()]*(?P<year>(?:19|20)\d{2}|\d{2})\)?[\s\-/.]+(?P<club>\d{2,5})[\s\-/.]+(?P<number>\d{1,8})\b"
 )
 # BE-25-6087189 | NL 2024-1234567 | ZA 26 123456
-_RE_CYN = re.compile(r"\b(?P<country>[A-Z]{2,3})[\s\-/.]*(?P<year>(?:19|20)\d{2}|\d{2})[\s\-/.]+(?P<number>\d{4,8})\b")
+_RE_CYN = re.compile(r"\b(?P<country>[A-Z]{2,9})[\s\-/.()]*(?P<year>(?:19|20)\d{2}|\d{2})\)?[\s\-/.]+(?P<number>\d{4,8})\b")
 # DV 06523-24-123
 _RE_DV = re.compile(r"\bDV[\s\-/.]*(?P<club>\d{4,5})[\s\-/.]+(?P<year>\d{2})[\s\-/.]+(?P<number>\d{1,5})\b")
 # 9822 OERF  (Elite)
@@ -80,16 +88,28 @@ _RE_NUM_CLUB = re.compile(r"^\s*(?P<number>\d{2,8})[\s\-/]*(?P<club>[A-Z]{2,6})\
 _RE_CLUB_NUM = re.compile(r"^\s*(?P<club>[A-Z]{2,6})[\s\-/]*(?P<number>\d{2,8})\s*$")
 
 # Words that look like a club code in titles but are not.
-_NOT_CLUBS = {"COCK", "HEN", "THE", "AND", "SON", "OF", "EX", "X", "ACE", "LOT", "OLR", "RACE", "RING"}
+_NOT_CLUBS = {"COCK", "HEN", "THE", "AND", "SON", "OF", "EX", "X", "ACE", "LOT", "OLR", "RACE", "RING",
+              "KM", "KMH", "MPM", "MIN", "MINS", "HRS", "AM", "PM", "R", "ZAR", "IN", "AT", "ON", "TO"}
+# Country as written on rings and by the results sites (AfrikaPro 2026 has BULGARIA-25-60582,
+# QATAR-26-2112, MAROC-25-81608, SLOVENIJA-25-107-5764 …) → the code used to compare rings.
+COUNTRY_ALIAS = {
+    "SA": "ZA", "RSA": "ZA", "BEL": "BE", "BELG": "BE", "NED": "NL", "GBR": "GB", "FRA": "FR",
+    "BULGARIA": "BG", "QATAR": "QA", "MAROC": "MA", "MAR": "MA", "MOROCCO": "MA", "ESP": "ES", "SPAIN": "ES",
+    "PRT": "PT", "POR": "PT", "PORTUGAL": "PT", "HUNG": "HU", "HUN": "HU", "HUNGARY": "HU",
+    "SLOVENIJA": "SI", "SLOVENIA": "SI", "SLO": "SI", "AUSTRIA": "AT", "AUT": "AT", "ITALIA": "IT",
+    "ITALY": "IT", "ITA": "IT", "DAN": "DK", "DEN": "DK", "DENMARK": "DK", "NAM": "NA", "NAMIBIA": "NA",
+    "KWT": "KW", "KUWAIT": "KW", "TUR": "TR", "TURKEY": "TR", "ROU": "RO", "ROM": "RO", "ROMANIA": "RO",
+    "POL": "PL", "POLAND": "PL", "GER": "DE", "GERMANY": "DE", "CHN": "CN", "CHINA": "CN",
+    "TAIWAN": "TW", "IRL": "IE", "IRELAND": "IE", "SUI": "CH", "SWITZERLAND": "CH", "ZIM": "ZW",
+    "ZIMBABWE": "ZW", "BOT": "BW", "BOTSWANA": "BW", "UAE": "AE", "PHI": "PH", "CUBA": "CU",
+}
 _COUNTRIES = {
     "ZA", "SA", "RSA", "BE", "BEL", "NL", "NED", "GB", "GBR", "DE", "DV", "FR", "FRA", "PL", "CZ",
     "ES", "PT", "IT", "US", "AU", "CN", "TW", "RO", "HU", "SK", "IE", "IHU", "NPA", "BELG", "NEHU",
-}
-
-
-# Local spellings of a country code → the one the results sites use ("SA-26-1146" is
-# ZA-26-1146 in the AfrikaPro results).
-COUNTRY_ALIAS = {"SA": "ZA", "RSA": "ZA", "BEL": "BE", "BELG": "BE", "NED": "NL", "GBR": "GB", "FRA": "FR"}
+    "BG", "QA", "MA", "SI", "AT", "DK", "NA", "KW", "TR", "CU", "CH", "IS", "SU", "PH", "RSM", "AE",
+    "ZW", "BW", "HR", "RS", "UA", "GR", "SE", "NO", "FI", "LT", "LV", "EE", "MT", "CY", "LU", "MX",
+    "BR", "AR", "TH", "JP", "KR", "SG", "MY", "NZ", "CA",
+} | set(COUNTRY_ALIAS)
 
 
 def _scan(rx: re.Pattern, t: str):
@@ -114,13 +134,13 @@ def parse_ring(text: str | None, default_year: int | None = None) -> Ring | None
     # The FIRST ring in the text, whatever its format: "Lot 74 SA-26-1146 son of ZA 24-GPU-9161"
     # is SA-26-1146 (a fuller-looking ring later on used to win). Same start: fuller format wins.
     found: list[tuple[int, int, Ring]] = []
-    for prio, rx in enumerate((_RE_DV, _RE_FULL, _RE_NUMCLUB, _RE_CYN)):
+    for prio, rx in enumerate((_RE_DV, _RE_WORDCLUB, _RE_FULL, _RE_LCYN, _RE_NUMCLUB, _RE_CYN)):
         for m in _scan(rx, t):
             if rx is _RE_DV:
                 found.append((m.start(), prio, Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"),
                                                     m.group("number"), sex)))
-            elif m.group("country") in _COUNTRIES and (rx is not _RE_FULL or m.group("club") not in _NOT_CLUBS):
-                club = None if rx is _RE_CYN else m.group("club")
+            elif m.group("country") in _COUNTRIES and (rx in (_RE_NUMCLUB, _RE_CYN) or m.group("club") not in _NOT_CLUBS):
+                club = None if rx is _RE_CYN else m.group("club").replace(" ", "")
                 found.append((m.start(), prio, Ring(m.group(0), m.group("country"), _year4(m.group("year")), club,
                                                     m.group("number"), sex)))
                 break  # later matches of this format start further on
@@ -153,6 +173,11 @@ def find_rings(text: str | None) -> list[Ring]:
 
     for m in _scan(_RE_DV, t):
         add(m, Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"), m.group("number")))
+    for rx in (_RE_WORDCLUB, _RE_LCYN):
+        for m in _scan(rx, t):
+            if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
+                add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club").replace(" ", ""),
+                            m.group("number")))
     for m in _scan(_RE_FULL, t):
         if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
             add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number")))

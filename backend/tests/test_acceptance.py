@@ -237,3 +237,20 @@ def test_ring_of_a_relative_never_brings_its_race_results(session):
     assert son.bird_id is None
     assert a.bird_id is None and b.bird_id is None and "also on lots 75 and 78" in a.match_note
     assert real.bird_id is not None and real.tier == "A"
+
+
+def test_lot_16_foreign_ring_written_in_full_wins_over_an_old_title_ring(session):
+    """Seen live (AfrikaPro Auction 4, lot 16): the title has ZA21 ABL 344 and the bird's own
+    ring BULGARIA-25-60582. 'BULGARIA' wasn't known as a country, so the 2021 ring was taken
+    as the bird's and the card warned of a loose match. The auction name carries no year."""
+    make_season(session, "AfrikaPro", 2026, {"BULGARIA-25-60582": ("Valya & Rosen Dobrevi", GOOD)})
+    lot = make_lot(session, 16, auction_id="afp4", title="Lot 16 ZA21 ABL 344 BULGARIA-25-60582",
+                   ring_raw="ZA21 ABL 344", olr_tag="AfrikaPro", olr_year=None, current_bid=1500)
+    engine.score_all(session)
+    assert lot.ring_raw == "BULGARIA-25-60582"
+    assert lot.bird is not None and lot.bird.ring_raw == "BULGARIA-25-60582"
+    assert lot.match_confidence == "exact" and lot.tier == "A"
+    # Written with the code instead of the name, it is the same bird.
+    other = make_lot(session, 17, auction_id="x", lot_key="l17", title="Lot 17 BG-25-60582", ring_raw="BG-25-60582")
+    engine.score_all(session, [other])
+    assert other.bird_id == lot.bird_id

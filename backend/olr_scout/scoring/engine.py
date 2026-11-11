@@ -38,6 +38,7 @@ class Context:
     progeny: "progeny.ProgenyIndex | None" = None
     # (source, auction, ring) → lot numbers, for rings found on more than one lot of one auction
     dup_rings: dict = field(default_factory=dict)
+    latest_year: dict = field(default_factory=dict)  # OLR name → newest season year with results
 
 
 def build_context(s: Session, prefs: dict | None = None) -> Context:
@@ -83,6 +84,17 @@ def match_lot(lot: Lot, ctx: Context) -> None:
         if p and c.relation != "ancestor":
             ancestors.add(p.canonical)
     own = lot.ring_raw
+    # A ring the reader took from the title that can't have raced the lot's season (a 2021 ring
+    # in an AfrikaPro 2026 sale) gives way to a title ring that can: the other is a relative.
+    season_year = lot.olr_year or ctx.latest_year.get(lot.olr_tag)
+    if lot.override_bird_id is None and season_year and lot.title:
+        stored = parse_ring(own) if own else None
+        from_title = own is None or normalise(own) in normalise(lot.title)
+        if from_title and not pedigree.fits_season(stored, season_year):
+            better = pedigree.own_ring(lot.title, season_year)
+            if better is not None and pedigree.fits_season(better, season_year):
+                own = better.raw
+                lot.ring_raw, lot.ring_norm = better.raw, normalise(better.raw)
     if own and lot.override_bird_id is None:
         p = parse_ring(own)
         if normalise(own) in ancestors or (p and p.canonical in ancestors):
@@ -422,6 +434,9 @@ def _score_all(s: Session, lots: list[Lot] | None = None) -> int:
                                         .where(Lot.ring_norm.is_not(None))):
         by_ring[(src, auc, ring)].append(no)
     ctx.dup_rings = {k: v for k, v in by_ring.items() if len(v) > 1}
+    for b in ctx.birds.values():
+        name = b.season.olr.name
+        ctx.latest_year[name] = max(ctx.latest_year.get(name, 0), b.season.year)
     for lot in lots:
         match_lot(lot, ctx)
     s.flush()
