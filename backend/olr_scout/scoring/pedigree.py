@@ -22,6 +22,8 @@ RELATION_WORDS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"\b(?:sire|father|vader|vater|vader\s*:)\b|\bs\s*:", re.I), "sire"),
     (re.compile(r"\b(?:dam|mother|moeder|mutter)\b|\bd\s*:", re.I), "dam"),
     (re.compile(r"\b(?:son|daughter|seun|dogter|child|kind|direct\s+from|out\s+of|uit)\s+(?:of|van)?\b", re.I), "parent"),
+    (re.compile(r"\b(?:(?:full|half|halwe)[\s-]*)?(?:brother|sister|broer|suster|sibling|nest\s*-?\s*mate)s?\s*(?:of|to|van)?\b",
+                re.I), "sibling"),
     (re.compile(r"\b(?:grand\s*sire|grand\s*father|grootvader)\b", re.I), "grandparent"),
     (re.compile(r"\b(?:grand\s*dam|grand\s*mother|grootmoeder)\b", re.I), "grandparent"),
 ]
@@ -29,7 +31,7 @@ RELATION_WORDS: list[tuple[re.Pattern, str]] = [
 
 @dataclass
 class Claim:
-    relation: str  # sire | dam | parent | grandparent | ancestor
+    relation: str  # sire | dam | parent | grandparent | sibling | ancestor (no word: may be the bird itself)
     ring_raw: str | None
     ring_norm: str | None
     name: str | None
@@ -90,7 +92,35 @@ def extract_claims(*texts: str | None, origin: str = "text", own_ring: str | Non
 
 
 def generation_weight(relation: str) -> float:
-    return {"sire": 1.0, "dam": 1.0, "parent": 1.0, "grandparent": 0.5, "related": 0.0}.get(relation, 0.35)
+    return {"sire": 1.0, "dam": 1.0, "parent": 1.0, "grandparent": 0.5, "related": 0.0, "sibling": 0.0}.get(relation, 0.35)
+
+
+NOT_ANCESTORS = ("related", "sibling")  # named in the text, but not in the bird's line
+_PAIRING = re.compile(r"(?:^|\s)[x×](?:\s|$)", re.I)
+
+
+def own_ring(text: str | None):
+    """The bird's own ring in a lot title: the first ring that no relation word introduces
+    ("son of", "sire", "full brother to", "nestmate"…) and that is not one half of a pairing
+    ("ZA-21-… x ZA-20-…"). None if every ring in the title names a relative."""
+    if not text:
+        return None
+    up = text.upper()
+    located = []
+    for r in find_rings(text):
+        pos = up.find(r.raw.upper())
+        if pos >= 0:
+            located.append((pos, r))
+    located.sort(key=lambda x: x[0])
+    for i, (pos, r) in enumerate(located):
+        before = text[(located[i - 1][0] + len(located[i - 1][1].raw)) if i else 0:pos]
+        after = text[pos + len(r.raw):located[i + 1][0] if i + 1 < len(located) else len(text)]
+        if any(p.search(before) for p, _ in RELATION_WORDS):
+            continue
+        if (i and _PAIRING.search(before)) or (i + 1 < len(located) and _PAIRING.search(after)):
+            continue
+        return r
+    return None
 
 
 DOCUMENT_ORIGINS = ("pdf", "ocr")

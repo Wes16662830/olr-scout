@@ -216,3 +216,24 @@ def test_dinokeng_lot_does_not_borrow_another_olrs_bird(session):
     engine.score_all(session)
     assert lot.bird_id is None and lot.match_confidence == "none"
     assert short.match_confidence == "fuzzy" and short.bird.ring_raw == "ZA-22-CRU-174"
+
+
+def test_ring_of_a_relative_never_brings_its_race_results(session):
+    """Seen live (AfrikaPro Auction 4 on Top Pigeon): two lots both showed the race results
+    of ZA-24-GPU-9161 — a relative named in their titles, not the birds sold."""
+    make_season(session, "AfrikaPro", 2025, {"ZA-24-GPU-9161": ("Jaco & Danie", GOOD)})
+    # A reader that stored the relative's ring as the lot's own: the title says "son of".
+    son = make_lot(session, 75, auction_id="afp4", title="Lot 75 Son of ZA 24-GPU-9161",
+                   ring_raw="ZA 24-GPU-9161", current_bid=100)
+    # Two lots of one auction with the same ring: neither can be that bird.
+    a = make_lot(session, 74, auction_id="afp4", lot_key="l74", title="Lot 74 ZA 24-GPU-9161 family",
+                 ring_raw="ZA 24-GPU-9161", current_bid=100)
+    b = make_lot(session, 78, auction_id="afp4", lot_key="l78", title="Lot 78 ZA 24-GPU-9161 family",
+                 ring_raw="ZA 24-GPU-9161", current_bid=100)
+    # The bird itself, sold in another auction, still matches.
+    real = make_lot(session, 5, auction_id="other", lot_key="l5", title="Lot 5 ZA 24-GPU-9161",
+                    ring_raw="ZA 24-GPU-9161", current_bid=100)
+    engine.score_all(session)
+    assert son.bird_id is None
+    assert a.bird_id is None and b.bird_id is None and "also on lots 75 and 78" in a.match_note
+    assert real.bird_id is not None and real.tier == "A"

@@ -9,6 +9,7 @@ Sources screen shows "no live lots / not yet verified".
 from __future__ import annotations
 
 from ..rings import normalise, parse_ring
+from ..scoring.pedigree import own_ring
 from ..util.http import SourceUnavailable
 from .base import Auction, AuctionSource, Lot, tag_olr
 from .render import playwright_available, render
@@ -60,9 +61,10 @@ class PigeonAuctionHouseSource(AuctionSource):
                       lot_no=lot_number(p.title), current_bid=p.price if p.price_kind != "starting" else None,
                       starting_bid=p.price if p.price_kind == "starting" else None, image_url=p.image_url,
                       olr_tag=auction.olr_tag)
-            ring = parse_ring(p.title)
+            ring = own_ring(p.title)  # not a relative the title names
             if ring:
-                lot.ring_raw, lot.ring_norm, lot.sex, lot.year = ring.raw, normalise(ring.raw), ring.sex, ring.year
+                lot.ring_raw, lot.ring_norm, lot.year = ring.raw, normalise(ring.raw), ring.year
+                lot.sex = (parse_ring(p.title) or ring).sex
             if self.platform == "woocommerce" and self.need_detail(lot):
                 page = parse_product_page(self.client.get_text(p.url), self.base_url, hints=[lot.ring_raw])
                 lot.ends_at, lot.description, lot.pedigree_text = page.ends_at, page.description, page.description

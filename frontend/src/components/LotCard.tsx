@@ -266,6 +266,7 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
   return (
     <article className={`card ${lot.claim_mismatch ? "mismatch" : ""} ${lot.my_bid ? `mine-${lot.my_bid.status}` : ""}`}>
       <MyBid lot={lot} onChange={onWatch} />
+      {lot.match_note?.includes("probably a relative") && <div className="redflag">⚠ {lot.match_note}</div>}
       {lot.claim_mismatch && <div className="redflag">⚠ Claim mismatch: the text says ace/winner but the verified result is mid-field.</div>}
       {lot.lot_no !== null && (
         <div className="lot-head">

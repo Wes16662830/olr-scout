@@ -11,7 +11,7 @@ A higher tier always outranks a lower tier.
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -36,6 +36,8 @@ class Context:
     birds_by_ring: dict[str, list[Bird]]
     best_pct: dict[int, float | None]
     progeny: "progeny.ProgenyIndex | None" = None
+    # (source, auction, ring) → lot numbers, for rings found on more than one lot of one auction
+    dup_rings: dict = field(default_factory=dict)
 
 
 def build_context(s: Session, prefs: dict | None = None) -> Context:
@@ -80,13 +82,29 @@ def match_lot(lot: Lot, ctx: Context) -> None:
         p = parse_ring(c.ring_raw)
         if p and c.relation != "ancestor":
             ancestors.add(p.canonical)
+    own = lot.ring_raw
+    if own and lot.override_bird_id is None:
+        p = parse_ring(own)
+        if normalise(own) in ancestors or (p and p.canonical in ancestors):
+            own = None  # stored by a reader, but the title calls it a relative ("son of …")
+        others = ctx.dup_rings.get((lot.source, lot.auction_id, lot.ring_norm))
+        if own and others:
+            # One bird can't be two lots of one sale: the ring must be a relative named in the
+            # titles. Showing its results on both cards would credit the wrong bird.
+            lot.bird_id, lot.match_confidence = None, "none"
+            rest = [str(n) for n in others if n != lot.lot_no and n is not None]
+            where = ("another lot" if not rest else f"lot {rest[0]}" if len(rest) == 1
+                     else "lots " + ", ".join(rest[:-1]) + " and " + rest[-1])
+            lot.match_note = (f"ring {own} is also on {where} of this auction — probably a relative named "
+                              "in the title, so no race results are shown. Open the lot to set its own ring.")
+            return
     # Loose (fuzzy) matches only within the OLR the lot's auction belongs to; an exact
     # ring match may come from any OLR (same ring = same bird).
     allowed = None
     if lot.olr_tag:
         allowed = {b.id for b in ctx.birds.values() if b.season.olr.name == lot.olr_tag}
     res = ctx.index.match(
-        lot.ring_raw,
+        own,
         [lot.title],
         year=lot.year,
         override_bird_id=lot.override_bird_id,
@@ -244,7 +262,7 @@ def score_lot(s: Session, lot: Lot, ctx: Context, siblings: dict[str, list[Lot]]
     lot.own_lot = preferences.is_own_lot(lot, prefs)
     if claims is None:
         claims = refresh_claims(s, lot, ctx)
-    verified = [c for c in claims if c.status in ("verified", "mismatch") and c.bird_id and c.relation != "related"]
+    verified = [c for c in claims if c.status in ("verified", "mismatch") and c.bird_id and c.relation not in pedigree.NOT_ANCESTORS]
     lot.claim_mismatch = any(c.status == "mismatch" for c in claims)
     sstat = seller.lookup(s, lot.seller)
     detail: dict = {
@@ -399,6 +417,11 @@ def score_all(s: Session, lots: list[Lot] | None = None) -> int:
 def _score_all(s: Session, lots: list[Lot] | None = None) -> int:
     ctx = build_context(s)
     lots = lots if lots is not None else list(s.scalars(select(Lot)))
+    by_ring: dict[tuple, list] = defaultdict(list)
+    for src, auc, ring, no in s.execute(select(Lot.source, Lot.auction_id, Lot.ring_norm, Lot.lot_no)
+                                        .where(Lot.ring_norm.is_not(None))):
+        by_ring[(src, auc, ring)].append(no)
+    ctx.dup_rings = {k: v for k, v in by_ring.items() if len(v) > 1}
     for lot in lots:
         match_lot(lot, ctx)
     s.flush()

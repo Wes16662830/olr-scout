@@ -87,6 +87,16 @@ _COUNTRIES = {
 }
 
 
+def _scan(rx: re.Pattern, t: str):
+    """Like ``rx.finditer`` but a match the caller rejects doesn't hide one starting inside
+    it: "LOT 74 - ZA 26-ABC-1234" first matches "LOT 74 - ZA 26" (LOT is no country), and
+    plain finditer would then skip the real ring."""
+    pos = 0
+    while (m := rx.search(t, pos)) is not None:
+        yield m
+        pos = m.start() + 1
+
+
 def parse_ring(text: str | None, default_year: int | None = None) -> Ring | None:
     """Parse the first ring in ``text``. Returns None if nothing ring-like is found."""
     if not text:
@@ -99,13 +109,13 @@ def parse_ring(text: str | None, default_year: int | None = None) -> Ring | None
     m = _RE_DV.search(t)
     if m:
         return Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"), m.group("number"), sex)
-    for m in _RE_FULL.finditer(t):
+    for m in _scan(_RE_FULL, t):
         if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
             return Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number"), sex)
-    for m in _RE_NUMCLUB.finditer(t):
+    for m in _scan(_RE_NUMCLUB, t):
         if m.group("country") in _COUNTRIES:
             return Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number"), sex)
-    for m in _RE_CYN.finditer(t):
+    for m in _scan(_RE_CYN, t):
         if m.group("country") in _COUNTRIES:
             return Ring(m.group(0), m.group("country"), _year4(m.group("year")), None, m.group("number"), sex)
     m = _RE_NUM_CLUB.match(t) or _RE_CLUB_NUM.match(t)
@@ -133,15 +143,15 @@ def find_rings(text: str | None) -> list[Ring]:
             seen.add(key)
             out.append(ring)
 
-    for m in _RE_DV.finditer(t):
+    for m in _scan(_RE_DV, t):
         add(m, Ring(m.group(0), "DV", _year4(m.group("year")), m.group("club"), m.group("number")))
-    for m in _RE_FULL.finditer(t):
+    for m in _scan(_RE_FULL, t):
         if m.group("country") in _COUNTRIES and m.group("club") not in _NOT_CLUBS:
             add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number")))
-    for m in _RE_NUMCLUB.finditer(t):
+    for m in _scan(_RE_NUMCLUB, t):
         if m.group("country") in _COUNTRIES:
             add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), m.group("club"), m.group("number")))
-    for m in _RE_CYN.finditer(t):
+    for m in _scan(_RE_CYN, t):
         if m.group("country") in _COUNTRIES:
             add(m, Ring(m.group(0), m.group("country"), _year4(m.group("year")), None, m.group("number")))
     return out

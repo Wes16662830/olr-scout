@@ -65,3 +65,28 @@ def test_loose_match_needs_the_same_club_and_olr():
     # Elite-style short ring: a loose match is allowed only among the lot's own OLR birds.
     assert idx.match("173 CRU", [], year=2022, fuzzy_allowed={7}).bird_id == 7
     assert idx.match("173 CRU", [], year=2022, fuzzy_allowed={9}).bird_id is None
+
+
+def test_a_rejected_lookalike_does_not_hide_the_real_ring():
+    # "LOT 74 - ZA 26" looks like a ring (LOT as a country) and used to swallow the real one.
+    from olr_scout.rings import find_rings, parse_ring
+
+    t = "Lot 74 - ZA 26-ABC-1234 Son of ZA 24-GPU-9161"
+    assert [r.raw for r in find_rings(t)] == ["ZA 26-ABC-1234", "ZA 24-GPU-9161"]
+    assert parse_ring(t).raw == "ZA 26-ABC-1234"
+
+
+def test_own_ring_skips_relatives_and_pairings():
+    from olr_scout.scoring.pedigree import own_ring
+
+    def own(t):
+        r = own_ring(t)
+        return r.raw if r else None
+
+    assert own("Lot 74 - ZA 26-ABC-1234 Son of ZA 24-GPU-9161") == "ZA 26-ABC-1234"
+    assert own("Son of ZA 24-GPU-9161 - ZA 26-ABC-1234") == "ZA 26-ABC-1234"
+    assert own("Lot 75 Son of ZA 24-GPU-9161") is None
+    assert own("Lot 76 Full sister to ZA 24-GPU-9161") is None
+    assert own("Nestmate of ZA 24-GPU-9161") is None
+    assert own("ZA 24-GPU-9161 x ZA 23-CRU-1111") is None  # a pairing: the parents
+    assert own("Lot 9 ZA 2026 PORT 7829 (C)") == "ZA 2026 PORT 7829"

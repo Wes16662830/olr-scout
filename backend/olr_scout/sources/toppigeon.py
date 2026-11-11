@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 
 from ..rings import normalise, parse_ring
+from ..scoring.pedigree import own_ring
 from .base import Auction, AuctionSource, Lot, parse_sex, tag_olr
 from .woo import lot_number, parse_category_page, parse_product_page
 
@@ -86,9 +87,11 @@ class TopPigeonSource(AuctionSource):
                 olr, year = tag_olr(p.title)
                 lot.olr_tag = olr or auction.olr_tag
                 lot.olr_year = year or auction.olr_year
-                ring = parse_ring(p.title)
+                # The bird's own ring: not a relative the title names ("Son of ZA-24-…").
+                ring = own_ring(p.title)
                 if ring:
-                    lot.ring_raw, lot.sex, lot.year = ring.raw, ring.sex, ring.year
+                    lot.ring_raw, lot.year = ring.raw, ring.year
+                    lot.sex = (parse_ring(p.title) or ring).sex
                     lot.ring_norm = normalise(ring.raw)
                 if self.need_detail(lot):
                     lot = self._load_detail(lot)
@@ -122,10 +125,15 @@ class TopPigeonSource(AuctionSource):
             lot.year = lot.year or int(m.group(0))
         lot.colour = attrs.get("colour") or attrs.get("color")
         lot.bloodline = attrs.get("bloodline") or attrs.get("strain")
-        if not lot.ring_raw:
-            ring = parse_ring(attrs.get("ring") or attrs.get("ring number") or page.summary_text)
+        # A ring field on the lot page is the seller's statement of this bird's ring: it wins
+        # over the title. Otherwise the summary text, again skipping rings of relatives.
+        field_ring = parse_ring(attrs.get("ring") or attrs.get("ring number") or "")
+        if field_ring:
+            lot.ring_raw, lot.ring_norm = field_ring.raw, normalise(field_ring.raw)
+            lot.year = field_ring.year or lot.year
+        elif not lot.ring_raw:
+            ring = own_ring(page.summary_text)
             if ring:
-
                 lot.ring_raw, lot.ring_norm, lot.year = ring.raw, normalise(ring.raw), lot.year or ring.year
         if lot.lot_no is None:
             lot.lot_no = lot_number(page.title, page.summary_text)
