@@ -499,6 +499,14 @@ def suggestions(s: Session, prefs: dict | None = None, include_over_max: bool = 
         x["combined"] = combined_score(x["lot"], prefs)
     if prefs.get("rank_by", "combined") == "combined":
         out.sort(key=lambda x: (TIER_ORDER.get(x["lot"].tier, 9), -(x["combined"]["score"] or 0), x["price"]))
+    elif str(prefs.get("rank_by", "")).startswith("jacket_"):
+        # Official jacket place first (best place on top), then the combined score for the rest.
+        from .. import jackets
+
+        for x in out:
+            x["jacket_place"] = jackets.place_for_lot(x["lot"], prefs["rank_by"])
+        out.sort(key=lambda x: (x["jacket_place"] is None, x["jacket_place"] or 0,
+                                TIER_ORDER.get(x["lot"].tier, 9), -(x["combined"]["score"] or 0), x["price"]))
     elif prefs.get("rank_by") == "breeding":
         # Breeding evidence first (highest breeding score), then the usual order for the rest.
         out.sort(key=lambda x: (x["lot"].breeding_score is None, -(x["lot"].breeding_score or 0),

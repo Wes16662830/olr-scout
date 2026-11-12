@@ -270,3 +270,18 @@ def test_afrikapro_jackets_on_the_card(session):
     j = lot_card(lot6, prefs)["bird"]["jackets"]
     assert j["season_year"] == 2026 and j["final"] and j["places"] == {"blue": 38, "brown": 53, "green": 266}
     assert lot_card(other, prefs)["bird"]["jackets"]["places"] == {}  # outside the top 375
+
+
+def test_suggestions_ranked_by_jacket_place(session):
+    """Settings → Ranking → jacket place: lots with a place in the chosen jacket first, best on top."""
+    make_season(session, "AfrikaPro", 2026, {"ZA-25-212420": ("A", GOOD), "SA-26-1146": ("B", GOOD),
+                                             "ZA-25-GPU-2614": ("C", GOOD), "ZA-25-NOJ-1": ("D", GOOD)})
+    lots = {no: make_lot(session, no, lot_key=f"j{no}", ring_raw=r, olr_tag="AfrikaPro", current_bid=1000)
+            for no, r in ((6, "ZA-25-212420"), (74, "SA-26-1146"), (99, "ZA-25-GPU-2614"), (1, "ZA-25-NOJ-1"))}
+    engine.score_all(session)
+    order = lambda rank_by: [x["lot"].lot_no for x in engine.suggestions(session, {**preferences.load(session), "rank_by": rank_by})]
+    assert order("jacket_brown")[:2] == [74, 6]  # Brown 35th, 53rd; the others have no Brown place
+    assert order("jacket_blue")[:3] == [6, 74, 99]  # Blue 38th, 151st, 251st
+    assert order("jacket_green")[0] == 99  # Green 66th
+    assert order("jacket_best")[:3] == [74, 6, 99]  # best places 35, 38, 66
+    assert order("jacket_best")[-1] == 1  # no jacket place: last

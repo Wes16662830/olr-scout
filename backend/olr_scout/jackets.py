@@ -49,3 +49,19 @@ def for_bird(olr: str | None, season_year: int | None, ring: str | None) -> dict
     if st is None or not ring:
         return None
     return {**st["meta"], "places": st["by_ring"].get(ring_key(ring), {})}
+
+
+RANK_CHOICES = {"jacket_blue": ("blue",), "jacket_brown": ("brown",), "jacket_green": ("green",),
+                "jacket_best": JACKETS}
+
+
+def place_for_lot(lot, rank_by: str) -> int | None:
+    """The lot's place in the jacket(s) a "rank by jacket" setting names (best of several),
+    or None when the bird has no place there (or no jacket standings exist for its OLR)."""
+    which = RANK_CHOICES.get(rank_by)
+    b = getattr(lot, "bird", None)
+    if not which or b is None:
+        return None
+    j = for_bird(b.season.olr.name, b.season.year, b.ring_raw)
+    places = [j["places"][k] for k in which if j and j["places"].get(k)]
+    return min(places) if places else None

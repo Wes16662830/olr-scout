@@ -117,6 +117,10 @@ export default function Settings() {
               <option value="combined">Combined score (racing + breeding, your mix)</option>
               <option value="racing">Racing score (how the bird raced)</option>
               <option value="breeding">Breeding score (offspring, siblings, parents)</option>
+              <option value="jacket_best">Jacket place — best of Blue, Brown, Green</option>
+              <option value="jacket_blue">Jacket place — Blue (Ace pigeon, all races)</option>
+              <option value="jacket_brown">Jacket place — Brown (endurance, races 6–10)</option>
+              <option value="jacket_green">Jacket place — Green (sprint, races 1–5)</option>
             </select>
           </label>
         </div>

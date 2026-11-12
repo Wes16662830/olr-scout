@@ -44,6 +44,10 @@ function WhyNoScores({ d }: { d: Diagnosis }) {
   );
 }
 
+const JACKET_RANK: Record<string, string> = {
+  jacket_best: "Blue, Brown or Green jacket", jacket_blue: "Blue jacket", jacket_brown: "Brown jacket", jacket_green: "Green jacket",
+};
+
 export default function Suggestions() {
   const { data, error, loading } = useData<Resp>("/suggestions", 60_000);
   const filter = useAuctionFilter();
@@ -56,7 +60,9 @@ export default function Suggestions() {
       ))}
       <p className="muted">
         Active lots at or under your max ({zar(data?.max_bid)}),{" "}
-        {data?.rank_by === "breeding"
+        {data?.rank_by?.startsWith("jacket_")
+          ? `lots with an official ${JACKET_RANK[data.rank_by] ?? "jacket"} place first (best place on top), then the rest by combined score.`
+          : data?.rank_by === "breeding"
           ? "lots with breeding evidence first (highest breeding score), then by tier and racing score."
           : data?.rank_by === "racing"
             ? "ranked by evidence tier, then racing score weighted by your family preferences."
