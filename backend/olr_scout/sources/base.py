@@ -16,7 +16,7 @@ from ..util.timeutil import as_aware, now_utc
 DETAIL_CLOSE_WINDOW = timedelta(minutes=60)
 DETAIL_MAX_AGE = timedelta(hours=6)
 # Bump when lot-page parsing changes, so stored lots are re-read once.
-DETAIL_VERSION = 2
+DETAIL_VERSION = 3  # 3: Top Pigeon end times / bid dates ('15th November 2026')
 
 
 @dataclass

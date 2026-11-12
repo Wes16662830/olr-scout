@@ -127,3 +127,19 @@ def test_after_an_update_the_browser_never_keeps_a_stale_page(api, tmp_path):
     old = api.get("/assets/index-ChAW9hF7.js")
     assert old.status_code == 200 and "location.reload" in old.text and old.headers["cache-control"] == "no-store"
     assert api.get("/assets/missing.css").status_code == 404
+
+
+def test_no_app_folder_is_skipped_by_the_windows_updater():
+    """update-windows copies the new version with robocopy /XD <names>, skipping every folder
+    of those names (the user's database is in backend/data). An app folder with such a name
+    never reaches the user: the jacket standings in olr_scout/data didn't."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    bat = (root / "update-windows.bat").read_text(encoding="utf-8", errors="replace")
+    skipped = set(re.search(r"/XD\s+(.+?)\s+/XF", bat).group(1).split())
+    shipped = [p for base in ("backend/olr_scout", "frontend/src", "frontend/public")
+               for p in (root / base).rglob("*") if p.is_dir() and "__pycache__" not in p.parts]
+    clashes = [str(p.relative_to(root)) for p in shipped if p.name in skipped]
+    assert not clashes, f"update-windows skips these folders: {clashes}"

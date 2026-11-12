@@ -1,7 +1,8 @@
 """AfrikaPro jacket standings (Blue = Ace pigeon over all races, Green = sprint races 1-5,
 Brown = endurance races 6-10), shown on the lot cards next to the race results.
 
-The standings come from files in ``olr_scout/data`` (``afrikapro_jackets_<year>.json``): the
+The standings come from files in ``olr_scout/standings`` (``afrikapro_jackets_<year>.json``;
+not a folder named "data": update-windows skips those, as they hold the user's database): the
 official final standings as the AfrikaPro rankings page shows them to visitors, top 375 of each
 jacket. A season's jackets are final once its final is flown, so one file per season is enough.
 """
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from .rings import normalise, parse_ring
 
-DATA = Path(__file__).resolve().parent / "data"
+DATA = Path(__file__).resolve().parent / "standings"
 JACKETS = ("blue", "green", "brown")
 
 
