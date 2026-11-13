@@ -95,6 +95,7 @@ def get_suggestions(s: Session = Depends(get_session), include_over_max: bool = 
     }
     return {"items": [lot_card(x["lot"], prefs, {"value_rank": x.get("value_rank")}) for x in items],
             "banners": banners, "max_bid": prefs["max_bid"], "rank_by": prefs.get("rank_by", "racing"),
+            "scenario": prefs.get("scenario"),
             "diagnosis": diagnosis,
             "auctions": engine.auction_overview(s, prefs)}
 
@@ -133,6 +134,34 @@ def search_lots(q: str = "", closed: bool = False, s: Session = Depends(get_sess
     shown = hits if closed else live
     return {"lots": [lot_card(l, prefs, {"found_by": [WHY[w][1] for w in why]}) for l, why in shown],
             "closed_count": len(hits) - len(live)}
+
+
+@protected.get("/rankings/seasons")
+def ranking_seasons(s: Session = Depends(get_session)):
+    """OLR seasons with stored results, newest first, each with its races."""
+    from .scenario import season_races
+
+    out = []
+    for season in s.scalars(select(Season).where(Season.ingested_at.is_not(None)).order_by(Season.year.desc())):
+        races = season_races(s, season.id)
+        if races:
+            out.append({"season_id": season.id, "olr": season.olr.name, "year": season.year, "races": races})
+    return out
+
+
+@protected.get("/rankings")
+def rankings(season_id: int, races: str, measure: str = "time", on_auction: bool = False, limit: int = 100,
+             s: Session = Depends(get_session)):
+    """What-if standings over the chosen races (comma-separated race numbers)."""
+    from .scenario import standings
+
+    if measure not in ("time", "result"):
+        raise HTTPException(400, "measure must be time or result")
+    try:
+        nos = [int(x) for x in races.split(",") if x.strip()]
+        return standings(s, season_id, nos, measure, on_auction, max(1, min(limit, 2000)))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
 
 
 @protected.get("/closing")

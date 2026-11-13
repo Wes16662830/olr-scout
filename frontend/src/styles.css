@@ -135,3 +135,6 @@ input.narrow { width: 90px; }
 .jacket-blue { border-color: #3b82f6; color: #1d4ed8; } .jacket-green { border-color: #16a34a; color: #15803d; }
 .jacket-brown { border-color: #a16207; color: #92400e; } .jacket.top { font-weight: 700; }
 @media (prefers-color-scheme: dark) { .jacket-blue { color: #93c5fd; } .jacket-green { color: #86efac; } .jacket-brown { color: #fcd34d; } }
+.races-pick .chip input { display: none; } .races-pick .chip { cursor: pointer; }
+table.rankings tr.for-sale { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+table.rankings td:nth-child(4), table.rankings td:nth-child(5) { white-space: nowrap; }

@@ -54,6 +54,8 @@ DEFAULTS: dict = {
     "results_seasons": 2,
     # Suggestions order: "combined" (default), "racing" or "breeding".
     "rank_by": "combined",
+    # Race scenario for rank_by "scenario" (set on the Rankings screen): {"season_id", "races", "measure", "label"}.
+    "scenario": None,
     # Combined score: share of racing (50–100%); the rest is breeding, scaled by its confidence.
     "combined_racing_weight": 70,
     "breeding_weights": {"progeny": 40.0, "siblings": 25.0, "parents": 15.0, "breeder": 10.0, "own": 10.0},

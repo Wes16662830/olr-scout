@@ -499,6 +499,18 @@ def suggestions(s: Session, prefs: dict | None = None, include_over_max: bool = 
         x["combined"] = combined_score(x["lot"], prefs)
     if prefs.get("rank_by", "combined") == "combined":
         out.sort(key=lambda x: (TIER_ORDER.get(x["lot"].tier, 9), -(x["combined"]["score"] or 0), x["price"]))
+    elif prefs.get("rank_by") == "scenario" and prefs.get("scenario"):
+        # Place in the race scenario chosen on the Rankings screen; the rest by combined score.
+        from ..scenario import rank_of_birds
+
+        try:
+            places = rank_of_birds(s, prefs["scenario"])
+        except (ValueError, KeyError, TypeError):
+            places = {}
+        for x in out:
+            x["scenario_place"] = places.get(x["lot"].bird_id)
+        out.sort(key=lambda x: (x["scenario_place"] is None, x["scenario_place"] or 0,
+                                TIER_ORDER.get(x["lot"].tier, 9), -(x["combined"]["score"] or 0), x["price"]))
     elif str(prefs.get("rank_by", "")).startswith("jacket_"):
         # Official jacket place first (best place on top), then the combined score for the rest.
         from .. import jackets

@@ -10,7 +10,7 @@ type Prefs = {
   own: { team_names: string[]; usernames: string[]; exclude_own: boolean };
   weights: Record<string, number>; family_ceiling: number; mismatch_threshold: number; tier_c_cap: number;
   results_seasons: number;
-  rank_by: string; breeding_weights: Record<string, number>; combined_racing_weight: number;
+  rank_by: string; scenario?: { label?: string } | null; breeding_weights: Record<string, number>; combined_racing_weight: number;
 };
 type Check = { parents: number; offspring: number; racing_vs_offspring: number | null; breeder_vs_offspring: number | null; verdict: string; min_parents: number };
 type Olr = { id: number; name: string; loft_id: number | null; aliases: string[]; enabled: boolean; auto_discovered: boolean;
@@ -117,6 +117,7 @@ export default function Settings() {
               <option value="combined">Combined score (racing + breeding, your mix)</option>
               <option value="racing">Racing score (how the bird raced)</option>
               <option value="breeding">Breeding score (offspring, siblings, parents)</option>
+              <option value="scenario">Race scenario{p.scenario?.label ? ` — ${p.scenario.label}` : " (choose it on the Rankings screen)"}</option>
               <option value="jacket_best">Jacket place — best of Blue, Brown, Green</option>
               <option value="jacket_blue">Jacket place — Blue (Ace pigeon, all races)</option>
               <option value="jacket_brown">Jacket place — Brown (endurance, races 6–10)</option>

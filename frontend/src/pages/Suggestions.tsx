@@ -10,6 +10,7 @@ type Diagnosis = { result_birds: number; seasons_ingested: number; results_statu
   lots_in_results?: number; result_seasons?: string[] };
 type Resp = { items: Lot[]; banners: { source: string; status: string; message: string }[]; max_bid: number; diagnosis?: Diagnosis;
   rank_by?: string;
+  scenario?: { label?: string } | null;
   auctions?: AuctionOverview[] };
 
 function WhyNoScores({ d }: { d: Diagnosis }) {
@@ -60,7 +61,9 @@ export default function Suggestions() {
       ))}
       <p className="muted">
         Active lots at or under your max ({zar(data?.max_bid)}),{" "}
-        {data?.rank_by?.startsWith("jacket_")
+        {data?.rank_by === "scenario"
+          ? `ranked by your race scenario (${data.scenario?.label ?? "set on the Rankings screen"}), then the rest by combined score.`
+          : data?.rank_by?.startsWith("jacket_")
           ? `lots with an official ${JACKET_RANK[data.rank_by] ?? "jacket"} place first (best place on top), then the rest by combined score.`
           : data?.rank_by === "breeding"
           ? "lots with breeding evidence first (highest breeding score), then by tier and racing score."
