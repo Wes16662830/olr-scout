@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, RaceChip, BirdSummary, Jackets, Breeding, Lineage, LotCard as Lot } from "../lib/api";
 import { countdown, pct, useNow, when, zar } from "../lib/format";
@@ -285,9 +286,23 @@ function MyBid({ lot, onChange }: { lot: Lot; onChange?: () => void }) {
 
 export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => void }) {
   const p = lot.performance as Record<string, unknown> | null;
+  const [watched, setWatched] = useState(!!lot.watched);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  useEffect(() => setWatched(!!lot.watched), [lot.watched]);
   const watch = async () => {
-    await api.post(`/lots/${lot.id}/watch`, {});
-    onWatch?.();
+    setBusy(true);
+    setErr("");
+    try {
+      if (watched) await api.del(`/lots/${lot.id}/watch`);
+      else await api.post(`/lots/${lot.id}/watch`, {});
+      setWatched(!watched);
+      onWatch?.();
+    } catch (e) {
+      setErr((e as Error).message || "Could not reach OLR Scout — is the black window still open?");
+    } finally {
+      setBusy(false);
+    }
   };
   return (
     <article className={`card ${lot.claim_mismatch ? "mismatch" : ""} ${lot.my_bid ? `mine-${lot.my_bid.status}` : ""}`}>
@@ -361,7 +376,10 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
       </div>
       <div className="row actions">
         <a className="btn" href={lot.url} target="_blank" rel="noopener noreferrer">Open lot ↗</a>
-        <button className="btn ghost" onClick={watch}>Watch</button>
+        <button className={`btn ${watched ? "" : "ghost"}`} onClick={watch} disabled={busy}
+          title={watched ? "On your watchlist — click to remove" : "Add to your watchlist"}>
+          {busy ? "…" : watched ? "★ Watching" : "☆ Watch"}
+        </button>
         {!lot.my_bid && (
           <button className="btn ghost" title="For sites that don't show bidder names: marks your bid and watches the lot"
             onClick={async () => {
@@ -372,6 +390,7 @@ export default function LotCard({ lot, onWatch }: { lot: Lot; onWatch?: () => vo
             }}>I bid on this</button>
         )}
       </div>
+      {err && <div className="small error">{err}</div>}
     </article>
   );
 }

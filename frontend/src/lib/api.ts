@@ -39,6 +39,7 @@ export type Tag = { name: string; weight: string };
 export interface LotCard {
   id: number;
   found_by?: string[];
+  watched?: boolean;
   source: string;
   auction_id: string;
   auction_name: string | null;

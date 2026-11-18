@@ -228,6 +228,9 @@ def lot_card(lot, prefs: dict, extra: dict | None = None) -> dict:
             card["bird"]["jackets"] = jackets.for_bird(lot.bird.season.olr.name, lot.bird.season.year, lot.bird.ring_raw)
         card["lineage"] = parents(sess, lot, prefs)
         card["last_bid"] = last_bid(sess, lot)
+        from .models import Watch
+
+        card["watched"] = sess.scalar(select(Watch.id).where(Watch.lot_id == lot.id)) is not None
         from .mybids import my_bid
 
         card["my_bid"] = my_bid(sess, lot, prefs)

@@ -20,6 +20,17 @@ export default function Watchlist() {
   const wl = useData<W[]>("/watchlist", 30_000);
   const al = useData<A[]>("/alerts", 30_000);
   const [pushMsg, setPushMsg] = useState("");
+  const [alertErr, setAlertErr] = useState("");
+  const alertAction = async (path: string) => {
+    setAlertErr("");
+    try {
+      await api.post(path);
+      al.reload();
+      window.dispatchEvent(new Event("olr-alerts"));
+    } catch (e) {
+      setAlertErr((e as Error).message || "Could not reach OLR Scout");
+    }
+  };
   const save = async (w: W, patch: Partial<W["watch"]>) => {
     await api.post(`/lots/${w.lot.id}/watch`, { ...w.watch, ...patch });
     wl.reload();
@@ -51,12 +62,19 @@ export default function Watchlist() {
             <label><input type="checkbox" checked={w.watch.above_max} onChange={(e) => save(w, { above_max: e.target.checked })} /> price above max</label>
             {group(w) === "leading"
               ? <span className="small muted">You're leading — stays on your watchlist until you're outbid or it closes.</span>
-              : <button className="btn ghost" onClick={async () => { await api.del(`/lots/${w.lot.id}/watch`); wl.reload(); }}>Remove</button>}
+              : <button className="btn ghost" onClick={async () => {
+                  try { await api.del(`/lots/${w.lot.id}/watch`); wl.reload(); } catch (e) { setAlertErr((e as Error).message); }
+                }}>Remove</button>}
           </div>
         </div>
       ))}
       <h2>Alerts</h2>
-      <button className="btn ghost" onClick={async () => { await api.post("/alerts/read"); al.reload(); }}>Mark all read</button>
+      <div className="row wrap">
+        <button className="btn ghost" onClick={() => alertAction("/alerts/read")}>Mark all read</button>
+        <button className="btn ghost" onClick={() => alertAction("/alerts/clear")}>Clear all</button>
+        <span className="small error">{alertErr}</span>
+      </div>
+      {al.data?.length === 0 && <p className="muted">No alerts.</p>}
       <ul className="alerts">
         {al.data?.map((a) => <li key={a.id} className={a.read ? "read" : ""}><b>{when(a.at)}</b> {a.message}</li>)}
       </ul>

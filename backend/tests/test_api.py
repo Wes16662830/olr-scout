@@ -143,3 +143,20 @@ def test_no_app_folder_is_skipped_by_the_windows_updater():
                for p in (root / base).rglob("*") if p.is_dir() and "__pycache__" not in p.parts]
     clashes = [str(p.relative_to(root)) for p in shipped if p.name in skipped]
     assert not clashes, f"update-windows skips these folders: {clashes}"
+
+
+def test_watch_flag_on_cards_and_clearing_alerts(api, session):
+    """Watch showed no change on the card, and alerts could only be greyed out."""
+    from olr_scout.models import Alert, Lot
+
+    login(api)
+    lot_id = api.get("/api/suggestions").json()["items"][0]["id"]
+    assert not next(i for i in api.get("/api/suggestions").json()["items"] if i["id"] == lot_id)["watched"]
+    assert api.post(f"/api/lots/{lot_id}/watch", json={}).status_code == 200
+    assert next(i for i in api.get("/api/suggestions").json()["items"] if i["id"] == lot_id)["watched"]
+    session.add(Alert(lot_id=lot_id, kind="closing", dedupe="t", message="closes soon"))
+    session.commit()
+    assert len(api.get("/api/alerts?unread=true").json()) == 1
+    assert api.post("/api/alerts/clear").json()["cleared"] == 1
+    assert api.get("/api/alerts").json() == [] and api.get("/api/alerts?unread=true").json() == []
+    assert session.query(Alert).count() == 1  # kept, so the same alert isn't raised again

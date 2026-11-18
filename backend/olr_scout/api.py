@@ -337,7 +337,7 @@ def watchlist(s: Session = Depends(get_session)):
 
 @protected.get("/alerts")
 def list_alerts(s: Session = Depends(get_session), unread: bool = False):
-    stmt = select(Alert).order_by(Alert.created_at.desc()).limit(100)
+    stmt = select(Alert).where(Alert.cleared.is_not(True)).order_by(Alert.created_at.desc()).limit(100)
     if unread:
         stmt = stmt.where(Alert.read.is_(False))
     return [{"id": a.id, "lot_id": a.lot_id, "kind": a.kind, "message": a.message, "at": iso(a.created_at),
@@ -350,6 +350,17 @@ def read_alerts(s: Session = Depends(get_session)):
         a.read = True
     s.commit()
     return {"ok": True}
+
+
+@protected.post("/alerts/clear")
+def clear_alerts(s: Session = Depends(get_session)):
+    """Empty the alert list. The alerts are kept (hidden), so they are not raised again."""
+    n = 0
+    for a in s.scalars(select(Alert).where(Alert.cleared.is_not(True))):
+        a.read, a.cleared = True, True
+        n += 1
+    s.commit()
+    return {"ok": True, "cleared": n}
 
 
 @protected.get("/push/key")

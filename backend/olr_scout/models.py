@@ -341,6 +341,8 @@ class Alert(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now_utc)
     read: Mapped[bool] = mapped_column(Boolean, default=False)
     pushed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # "Clear all" hides an alert; the row stays so the same alert is not raised again.
+    cleared: Mapped[bool | None] = mapped_column(Boolean, default=False)
 
 
 class PushSubscription(Base):

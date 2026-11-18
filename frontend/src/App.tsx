@@ -23,7 +23,12 @@ const NAV: [string, string][] = [
 ];
 
 function AlertBell() {
-  const { data } = useData<{ id: number }[]>("/alerts?unread=true", 30_000);
+  const { data, reload } = useData<{ id: number }[]>("/alerts?unread=true", 30_000);
+  // Watchlist → "Mark all read" / "Clear all": update the count at once, not at the next poll.
+  useEffect(() => {
+    window.addEventListener("olr-alerts", reload);
+    return () => window.removeEventListener("olr-alerts", reload);
+  }, [reload]);
   return <NavLink to="/watchlist" className="bell">🔔{data && data.length > 0 ? <b>{data.length}</b> : null}</NavLink>;
 }
 
