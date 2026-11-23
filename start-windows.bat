@@ -3,9 +3,13 @@ rem OLR Scout: double-click to start. Leave this window open while you use the a
 setlocal
 cd /d "%~dp0backend"
 
-rem A finished install leaves .venv\installed.ok. If the window was closed half-way,
-rem the marker is missing and the install simply runs again.
-if exist ".venv\installed.ok" goto :screens
+rem A finished install leaves .venv\installed.ok (a copy of requirements.txt). If the window
+rem was closed half-way, the marker is missing and the install simply runs again. If an update
+rem changed requirements.txt, only the packages are brought up to date.
+if exist ".venv\installed.ok" (
+  "%SystemRoot%\System32\fc.exe" /b requirements.txt ".venv\installed.ok" >nul 2>&1 && goto :screens
+  if exist ".venv\Scripts\python.exe" goto :packages
+)
 
 echo First run: setting up Python packages. This takes a few minutes - do not close this window.
 if exist .venv rmdir /s /q .venv
@@ -26,9 +30,12 @@ echo Using: %PYCMD%
 %PYCMD% -m venv .venv
 if not exist ".venv\Scripts\python.exe" goto :wrongpython
 ".venv\Scripts\python.exe" -m pip install --upgrade pip
+
+:packages
+echo Installing / updating Python packages...
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto :pipfail
-echo ok> ".venv\installed.ok"
+copy /y requirements.txt ".venv\installed.ok" >nul
 
 :screens
 if exist "..\frontend\dist\index.html" goto :run
@@ -46,6 +53,9 @@ echo OLR Scout is starting - your browser opens http://localhost:8000 automatica
 echo Close this window to stop it.
 echo.
 set "OLR_SCOUT_OPEN_BROWSER=1"
+rem Use SQLAlchemy without its compiled speed-ups: Windows Smart App Control / Application
+rem Control policies can block those files ("DLL load failed ... _processors_cy"). Barely slower.
+set "DISABLE_SQLALCHEMY_CEXT_RUNTIME=1"
 ".venv\Scripts\python.exe" -m uvicorn olr_scout.main:app --host 127.0.0.1 --port 8000
 echo.
 echo OLR Scout stopped. If you did not stop it yourself, the error is shown above.

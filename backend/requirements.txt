@@ -1,6 +1,6 @@
 fastapi>=0.110
 uvicorn>=0.29
-sqlalchemy>=2.0
+sqlalchemy>=2.0,<2.1  # 2.1's compiled parts are required, and Windows Smart App Control can block them
 apscheduler>=3.10,<4
 httpx>=0.27
 beautifulsoup4>=4.12

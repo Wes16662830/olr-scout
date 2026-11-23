@@ -8,6 +8,7 @@ if not exist ".venv\Scripts\python.exe" (
   exit /b 1
 )
 echo Checking the results site - this takes about 15 seconds...
+set "DISABLE_SQLALCHEMY_CEXT_RUNTIME=1"
 ".venv\Scripts\python.exe" scripts\diagnose_results.py
 start "" notepad "%~dp0results-diagnosis.txt"
 pause

@@ -33,6 +33,7 @@ if exist ".env" (
 echo.
 
 echo [Python packages]
+set "DISABLE_SQLALCHEMY_CEXT_RUNTIME=1"
 if exist "backend\.venv\installed.ok" (
   "backend\.venv\Scripts\python.exe" -c "import fastapi, uvicorn, sqlalchemy, apscheduler, httpx, bs4, lxml, openpyxl; print('   ok - all packages installed')" 2>nul || echo    PROBLEM: packages incomplete - delete backend\.venv and run start-windows.bat again
 ) else (

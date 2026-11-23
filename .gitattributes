@@ -1,0 +1,2 @@
+# Windows scripts: keep CRLF exactly as stored (cmd mis-reads labels in LF files)
+*.bat -text
