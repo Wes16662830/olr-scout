@@ -14,19 +14,48 @@ USER_AGENT = (
 )
 
 
+def _say(msg: str) -> None:
+    try:
+        print(msg, flush=True)
+    except Exception:  # a console that can't show the path's characters
+        print(msg.encode("ascii", "replace").decode(), flush=True)
+
+
+def _read_text(path: Path) -> str:
+    """Notepad may save as UTF-8 with a byte-order mark, or as "Unicode" (UTF-16)."""
+    raw = path.read_bytes()
+    if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return raw.decode("utf-16")
+    return raw.decode("utf-8-sig", errors="replace")
+
+
 def _load_env_file() -> None:
-    """Read KEY=value lines from olr-scout/.env (or backend/.env) into the
-    environment, without overriding variables that are already set."""
+    """Read KEY=value lines from olr-scout/.env, else backend/.env, into the environment,
+    without overriding variables that are already set. Says in the console which file
+    was used, and warns about the usual Notepad slips (".env.txt", two files)."""
     here = Path(__file__).resolve().parent
-    for path in (here.parents[1] / ".env", here.parent / ".env"):
-        if not path.is_file():
+    found = []
+    for folder in (here.parents[1], here.parent):
+        for name in (".env", ".env.txt", "env.txt"):
+            if (folder / name).is_file():
+                found.append(folder / name)
+    if not found:
+        _say("OLR Scout settings: no .env file found (copy .env.example to .env in the OLR Scout folder).")
+        return
+    path = found[0]  # the main folder's .env wins; then backend's
+    if path.name != ".env":
+        _say(f"OLR Scout settings: WARNING - read {path}. Notepad added a hidden .txt ending; "
+              "rename it to .env (see the README).")
+    else:
+        _say(f"OLR Scout settings: read {path}")
+    for other in found[1:]:
+        _say(f"OLR Scout settings: WARNING - {other} is IGNORED (only {path} is used). Delete one of the two.")
+    for line in _read_text(path).splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
             continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
 if os.environ.get("OLR_SCOUT_SKIP_ENV_FILE") != "1":
