@@ -62,6 +62,15 @@ DEFAULTS: dict = {
 }
 
 
+# Settings used only when a list is shown (order, filters, budget, the combined mix): changing
+# them needs no re-scoring of every lot, which on a big database slowed the app for a minute.
+# Anything not listed here (weights, families, own usernames, caps …) does trigger one.
+DISPLAY_ONLY = {
+    "rank_by", "scenario", "max_bid", "near_max_buffer", "per_lot_max", "per_family_max", "include_tier_c",
+    "sex", "year_min", "year_max", "min_races", "ace_only", "combined_racing_weight", "results_seasons",
+}
+
+
 def load(s: Session) -> dict:
     row = s.get(Preference, "user")
     prefs = copy.deepcopy(DEFAULTS)

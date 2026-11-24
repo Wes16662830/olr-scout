@@ -70,8 +70,11 @@ def me():
 def get_suggestions(s: Session = Depends(get_session), include_over_max: bool = False):
     prefs = preferences.load(s)
     items = engine.suggestions(s, prefs, include_over_max)
+    from .sources.registry import disabled_keys
+
+    off = disabled_keys(s)  # a site switched off in Settings raises no warnings
     banners = [{"source": h.source_id, "status": h.status, "message": h.message}
-               for h in s.scalars(select(SourceHealth)) if h.status in ("degraded", "error")]
+               for h in s.scalars(select(SourceHealth)) if h.status in ("degraded", "error") and h.source_id not in off]
     tiers = {t: n for t, n in s.execute(select(Lot.tier, func.count()).where(Lot.status.in_(("live", "upcoming")))
                                         .group_by(Lot.tier)).all()}
     bh = s.get(SourceHealth, "benzing")
@@ -781,12 +784,15 @@ def get_settings(s: Session = Depends(get_session)):
 
 @protected.put("/settings")
 def put_settings(body: dict = Body(...), s: Session = Depends(get_session)):
+    before = preferences.load(s)
     try:
         prefs = preferences.save(s, body)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
-    s.commit()  # saved now; rescoring follows in the background
-    _rescore_in_background()
+    s.commit()  # saved now; rescoring follows in the background, only if a score can change
+    changed = {k for k in set(before) | set(prefs) if before.get(k) != prefs.get(k)}
+    if changed - preferences.DISPLAY_ONLY:
+        _rescore_in_background()
     return prefs
 
 

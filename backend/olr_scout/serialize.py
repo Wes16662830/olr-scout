@@ -69,14 +69,33 @@ def _best_condition(races: list[dict], key: str) -> dict | None:
     return {"by": stats, "best": best if clear else None}
 
 
-def bird_summary(s, bird: Bird) -> dict:
-    """Who entered the bird and how it did, race by race (from OLR results)."""
-    flights = s.scalars(select(Flight).where(Flight.season_id == bird.season_id, Flight.is_training.is_(False))
+_CONDITIONS: dict[tuple, dict] = {}
+
+
+def _season_view(s, season) -> tuple[list, set[int], dict[int, dict]]:
+    """A season's races, its long races and race conditions. The conditions (winner's speed
+    per race, over every result) are the same for every bird of the season, so they are worked
+    out once (they were per card: half the time of loading Suggestions) and renewed when the
+    season is downloaded or re-scored again."""
+    flights = s.scalars(select(Flight).where(Flight.season_id == season.id, Flight.is_training.is_(False))
                         .order_by(Flight.flown_at, Flight.id)).all()
     long_ids = set(long_flight_ids([FlightIn(f.id, f.distance_km) for f in flights]))
+    key = (season.id, id(s.get_bind()), season.ingested_at, season.metrics_version,
+           tuple((f.id, f.distance_km) for f in flights))
+    cond = _CONDITIONS.get(key)
+    if cond is None:
+        cond = _race_conditions(s, season.id, flights)
+        for k in [k for k in _CONDITIONS if k[0] == season.id]:
+            del _CONDITIONS[k]
+        _CONDITIONS[key] = cond
+    return flights, long_ids, cond
+
+
+def bird_summary(s, bird: Bird) -> dict:
+    """Who entered the bird and how it did, race by race (from OLR results)."""
+    flights, long_ids, cond = _season_view(s, bird.season)
     pos = {r.flight_id: r.position for r in bird.results}
     behind = {r.flight_id: r.behind_min for r in bird.results}
-    cond = _race_conditions(s, bird.season_id, flights)
     races = []
     for i, f in enumerate(flights, 1):
         p = pos.get(f.id)

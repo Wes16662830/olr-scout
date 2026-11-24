@@ -192,3 +192,22 @@ def test_switching_an_auction_site_off(api, session, client):
     assert api.put(f"/api/sources/{site}", json={"enabled": True}).json()["enabled"] is True
     assert any(i["source"] == site for i in api.get("/api/suggestions").json()["items"])
     assert api.put("/api/sources/nope", json={"enabled": False}).status_code == 404
+
+
+def test_switched_off_site_raises_no_banner_and_display_settings_skip_rescoring(api, session, monkeypatch):
+    from olr_scout import api as api_mod
+    from olr_scout.models import SourceHealth
+
+    login(api)
+    session.merge(SourceHealth(source_id="elite", status="degraded", message="blocked: bot challenge", detail={}))
+    session.commit()
+    assert any(b["source"] == "elite" for b in api.get("/api/suggestions").json()["banners"])
+    api.put("/api/sources/elite", json={"enabled": False})
+    assert not any(b["source"] == "elite" for b in api.get("/api/suggestions").json()["banners"])
+    calls = []
+    monkeypatch.setattr(api_mod, "_rescore_in_background", lambda: calls.append(1))
+    p = api.get("/api/settings").json()
+    api.put("/api/settings", json={**p, "rank_by": "jacket_brown", "max_bid": 4000})
+    assert calls == []  # order and budget only: nothing to re-score
+    api.put("/api/settings", json={**p, "weights": {**p["weights"], "hard": 20}})
+    assert calls == [1]
