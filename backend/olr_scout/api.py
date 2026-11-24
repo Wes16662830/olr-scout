@@ -129,7 +129,10 @@ def search_lots(q: str = "", closed: bool = False, s: Session = Depends(get_sess
     if close_stale(s):
         s.commit()
     prefs = preferences.load(s)
-    hits = search(s, q, limit=500)
+    from .sources.registry import disabled_keys
+
+    off = disabled_keys(s)
+    hits = [(l, why) for l, why in search(s, q, limit=500) if l.source not in off]
     live = [(l, why) for l, why in hits if l.status in ("live", "upcoming")]
     shown = hits if closed else live
     return {"lots": [lot_card(l, prefs, {"found_by": [WHY[w][1] for w in why]}) for l, why in shown],
@@ -168,7 +171,9 @@ def rankings(season_id: int, races: str, measure: str = "time", on_auction: bool
 def closing_soon(s: Session = Depends(get_session), hours: int = 24):
     prefs = preferences.load(s)
     now = now_utc()
-    lots = s.scalars(select(Lot).where(Lot.status == "live", Lot.ends_at.is_not(None), Lot.ends_at >= now,
+    from .sources.registry import disabled_keys
+
+    lots = s.scalars(select(Lot).where(Lot.status == "live", Lot.source.not_in(disabled_keys(s)), Lot.ends_at.is_not(None), Lot.ends_at >= now,
                                        Lot.ends_at <= now + timedelta(hours=hours)).order_by(Lot.ends_at)).all()
     groups: dict[str, list] = {}
     for l in lots:
@@ -324,8 +329,12 @@ def watchlist(s: Session = Depends(get_session)):
     if close_stale(s) + prune_watchlist(s):
         s.commit()
     prefs = preferences.load(s)
+    from .sources.registry import disabled_keys
+
+    off = disabled_keys(s)
     rows = [{"watch": {"id": w.id, "near_max_within": w.near_max_within, "closes_in": w.closes_in,
-                       "above_max": w.above_max, "auto": bool(w.auto)}, "lot": lot_card(w.lot, prefs)}
+                       "above_max": w.above_max, "auto": bool(w.auto), "site_off": w.lot.source in off},
+             "lot": lot_card(w.lot, prefs)}
             for w in s.scalars(select(Watch)) if w.lot]
     live = [r for r in rows if r["lot"].get("status") in ("live", "upcoming")]
     done = [r for r in rows if r not in live]
@@ -692,13 +701,15 @@ def ocr_lot(lot_id: int, s: Session = Depends(get_session)):
 @protected.get("/sources")
 def sources_status(s: Session = Depends(get_session)):
     from . import scheduler
-    from .sources.registry import ADAPTERS
+    from .sources.registry import ADAPTERS, disabled_keys
 
+    off = disabled_keys(s)
     out = []
     for cls in ADAPTERS:
         h = s.get(SourceHealth, cls.key)
         live = s.scalar(select(func.count()).select_from(Lot).where(Lot.source == cls.key, Lot.status == "live"))
         out.append({"key": cls.key, "name": cls.name, "base_url": cls.base_url, "verified": cls.verified,
+                    "enabled": cls.key not in off,
                     "status": h.status if h else "never run", "last_run": iso(h.last_run) if h else None,
                     "last_success": iso(h.last_success) if h else None, "lot_count": live,
                     "message": h.message if h else "", "detail": h.detail if h else {},
@@ -728,6 +739,22 @@ def _background(fn, *args, busy=None, busy_message="a job is already running") -
         return JSONResponse({"started": False, "message": busy_message}, status_code=409)
     threading.Thread(target=fn, args=args, daemon=True).start()
     return JSONResponse({"started": True, "message": "started — watch this screen for the result"}, status_code=202)
+
+
+@protected.put("/sources/{key}")
+def set_source(key: str, body: dict = Body(...), s: Session = Depends(get_session)):
+    """Switch an auction site on or off. Off: never contacted; its lots leave Suggestions,
+    Closing soon, Search and Rankings (watched lots stay on the Watchlist, no longer updated)."""
+    from .sources.registry import set_enabled
+
+    if "enabled" not in body:
+        raise HTTPException(400, "send {\"enabled\": true|false}")
+    try:
+        set_enabled(s, key, bool(body["enabled"]))
+    except KeyError:
+        raise HTTPException(404, f"no auction site called {key}")
+    s.commit()
+    return {"ok": True, "key": key, "enabled": bool(body["enabled"])}
 
 
 @protected.post("/sources/refresh")

@@ -161,7 +161,10 @@ def build_plan(s: Session, goal: dict, save: bool = True) -> dict:
 
     cands: list[Candidate] = []
     excluded: list[dict] = []
-    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.tier.in_(("A", "B")))):
+    from .sources.registry import disabled_keys
+
+    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.tier.in_(("A", "B")),
+                                           Lot.source.not_in(disabled_keys(s)))):
         gen1, gen2, fams = _lot_ancestry(s, lot)
         if cores:
             fams = [f for f in fams if f in cores]

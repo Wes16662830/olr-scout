@@ -481,7 +481,9 @@ def suggestions(s: Session, prefs: dict | None = None, include_over_max: bool = 
     prefs = prefs or preferences.load(s)
     out = []
     stale = now_utc() - timedelta(minutes=5)  # anti-sniping can extend a little past the listed end
-    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")))):
+    from ..sources.registry import disabled_keys
+
+    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.source.not_in(disabled_keys(s)))):
         if lot.ends_at is not None and as_aware(lot.ends_at) < stale:
             continue
         ok, why = passes_filters(lot, prefs)
@@ -552,7 +554,9 @@ def auction_overview(s: Session, prefs: dict | None = None) -> list[dict]:
     prefs = prefs or preferences.load(s)
     stale = now_utc() - timedelta(minutes=5)
     out: dict[str, dict] = {}
-    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")))):
+    from ..sources.registry import disabled_keys
+
+    for lot in s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.source.not_in(disabled_keys(s)))):
         key = f"{lot.source}:{lot.auction_id}"
         a = out.setdefault(key, {"key": key, "source": lot.source, "auction_id": lot.auction_id,
                                  "auction_name": lot.auction_name, "olr_tag": lot.olr_tag, "lots": 0,

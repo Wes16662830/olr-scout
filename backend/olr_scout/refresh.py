@@ -288,7 +288,10 @@ def run_sources(s: Session, sources: list[AuctionSource]) -> list[dict]:
 
 
 def refresh_all(s: Session, sources: dict[str, AuctionSource], only: list[str] | None = None) -> list[dict]:
-    chosen = [src for key, src in sources.items() if not only or key in only]
+    from .sources.registry import disabled_keys
+
+    off = disabled_keys(s)  # switched off in Settings: not contacted at all
+    chosen = [src for key, src in sources.items() if (not only or key in only) and key not in off]
     reports = run_sources(s, chosen)
     close_stale(s)
     seller.recompute(s)
@@ -339,9 +342,12 @@ def hot_refresh(s: Session, sources: dict[str, AuctionSource]) -> int:
 
     fetched: list[tuple[LotRow, object, bool, str | None]] = []
     blocked: dict[str, str] = {}
+    from .sources.registry import disabled_keys
+
+    off = disabled_keys(s)
     for row, lot, is_final in jobs:
         src = sources.get(row.source)
-        if src is None or row.source in blocked:
+        if src is None or row.source in blocked or row.source in off:
             continue
         h = s.get(SourceHealth, row.source)
         if h and h.status in ("degraded", "error") and "blocked" in (h.message or ""):

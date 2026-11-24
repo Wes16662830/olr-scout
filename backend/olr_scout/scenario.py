@@ -66,7 +66,10 @@ def standings(s: Session, season_id: int, race_nos: list[int], measure: str = "t
     ranked = {b.id: i for i, (_, b, _) in enumerate(rows, 1)}
 
     on_sale: dict[int, list[Lot]] = defaultdict(list)
-    for lot in s.scalars(select(Lot).where(Lot.status.in_(LIVE), Lot.bird_id.in_(list(birds)))):
+    from .sources.registry import disabled_keys
+
+    for lot in s.scalars(select(Lot).where(Lot.status.in_(LIVE), Lot.bird_id.in_(list(birds)),
+                                           Lot.source.not_in(disabled_keys(s)))):
         on_sale[lot.bird_id].append(lot)
 
     lead = rows[0][0] if rows else None

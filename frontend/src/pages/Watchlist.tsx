@@ -5,7 +5,7 @@ import { when } from "../lib/format";
 import { useData } from "../lib/useData";
 import { enablePush } from "../push";
 
-type W = { watch: { id: number; near_max_within: number | null; closes_in: number[]; above_max: boolean; auto?: boolean }; lot: Lot };
+type W = { watch: { id: number; near_max_within: number | null; closes_in: number[]; above_max: boolean; auto?: boolean; site_off?: boolean }; lot: Lot };
 type A = { id: number; lot_id: number; kind: string; message: string; at: string; read: boolean };
 
 // The server sends these in this order: leading, outbid, other live lots, closed.
@@ -47,6 +47,8 @@ export default function Watchlist() {
         <div key={w.watch.id} className="watch">
           {group(w) !== (i > 0 ? group(wl.data![i - 1]) : null) && <h2 className="watch-group">{GROUP_TEXT[group(w)]}</h2>}
           {w.watch.auto && <div className="small muted">Added automatically because you bid on it.</div>}
+          {w.watch.site_off && <div className="small redflag">This auction site is switched off in Settings — the bid and
+            closing time shown are the last ones read, not updated. Open the lot on the site to check.</div>}
           <LotCard lot={w.lot} onWatch={wl.reload} />
           <div className="rules row wrap">
             <label>Warn within R

@@ -13,12 +13,29 @@ type Prefs = {
   rank_by: string; scenario?: { label?: string } | null; breeding_weights: Record<string, number>; combined_racing_weight: number;
 };
 type Check = { parents: number; offspring: number; racing_vs_offspring: number | null; breeder_vs_offspring: number | null; verdict: string; min_parents: number };
+type Site = { key: string; name: string; base_url: string; enabled?: boolean; status: string; lot_count: number };
 type Olr = { id: number; name: string; loft_id: number | null; aliases: string[]; enabled: boolean; auto_discovered: boolean;
   seasons: { id: number; year: number; registered: number | null; ingested_at: string | null; flights: number }[] };
 
 export default function Settings() {
   const { data } = useData<Prefs>("/settings");
   const olrs = useData<Olr[]>("/olrs");
+  const sites = useData<Site[]>("/sources");
+  const [siteMsg, setSiteMsg] = useState("");
+  const [siteOn, setSiteOn] = useState<Record<string, boolean>>({});  // shown at once, before the server answers
+  const saveSite = async (key: string, enabled: boolean) => {
+    setSiteOn((m) => ({ ...m, [key]: enabled }));
+    setSiteMsg("Saving…");
+    try {
+      await api.put(`/sources/${key}`, { enabled });
+      setSiteMsg(enabled ? "✓ Switched on — its lots appear after the next refresh" : "✓ Switched off");
+    } catch (e) {
+      setSiteMsg(`Not saved: ${(e as Error).message}`);
+    } finally {
+      await sites.reload();
+      setSiteOn((m) => { const n = { ...m }; delete n[key]; return n; });
+    }
+  };
   const check = useData<Check>("/scores/check");
   const [p, setP] = useState<Prefs | null>(null);
   const [msg, setMsg] = useState("");
@@ -165,6 +182,23 @@ export default function Settings() {
         </div>
       </div>
       <button className="btn" onClick={save}>Save settings</button> <span className="muted">{msg}</span>
+
+      <div className="panel">
+        <h2>Auction sites</h2>
+        <p className="small muted">Untick a site to leave it out: OLR Scout stops reading it, and its lots leave
+          Suggestions, Closing soon, Search and Rankings. Lots of it already on your Watchlist stay there, marked as no
+          longer updated. Saved as soon as you tick or untick.</p>
+        <table><thead><tr><th>Site</th><th>Live lots</th><th>Status</th><th>On</th></tr></thead>
+          <tbody>{sites.data?.filter((x) => x.key !== "benzing").map((x) => ({ ...x, enabled: siteOn[x.key] ?? x.enabled })).map((x) => (
+            <tr key={x.key} className={x.enabled === false ? "muted" : ""}>
+              <td><a href={x.base_url} target="_blank" rel="noopener noreferrer">{x.name}</a></td>
+              <td>{x.lot_count}</td>
+              <td className="small">{x.enabled === false ? "switched off" : x.status}</td>
+              <td><input type="checkbox" checked={x.enabled !== false} onChange={(e) => saveSite(x.key, e.target.checked)} /></td>
+            </tr>
+          ))}</tbody></table>
+        <span className="small muted">{siteMsg}</span>
+      </div>
 
       <div className="panel">
         <h2>OLR registry</h2>

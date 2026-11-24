@@ -160,3 +160,35 @@ def test_watch_flag_on_cards_and_clearing_alerts(api, session):
     assert api.post("/api/alerts/clear").json()["cleared"] == 1
     assert api.get("/api/alerts").json() == [] and api.get("/api/alerts?unread=true").json() == []
     assert session.query(Alert).count() == 1  # kept, so the same alert isn't raised again
+
+
+def test_switching_an_auction_site_off(api, session, client):
+    """Settings → Auction sites: an off site is not contacted and its lots leave the lists."""
+    from olr_scout import refresh
+    from olr_scout.sources.registry import build_sources
+
+    login(api)
+    items = api.get("/api/suggestions").json()["items"]
+    site = items[0]["source"]
+    watched = next(i["id"] for i in items if i["source"] == site)
+    api.post(f"/api/lots/{watched}/watch", json={})
+    assert api.put(f"/api/sources/{site}", json={"enabled": False}).json()["enabled"] is False
+    assert next(x for x in api.get("/api/sources").json() if x["key"] == site)["enabled"] is False
+    assert all(i["source"] != site for i in api.get("/api/suggestions").json()["items"])
+    assert all(a["source"] != site for a in api.get("/api/suggestions").json()["auctions"])
+    closing = [l for g in api.get("/api/closing?hours=500").json() for l in g["lots"]]
+    assert all(l["source"] != site for l in closing)
+    w = next(r for r in api.get("/api/watchlist").json() if r["lot"]["id"] == watched)
+    assert w["watch"]["site_off"] is True  # kept on the watchlist, marked
+    n = len(client.request_log)
+    refresh.refresh_all(session, build_sources(client))
+    from urllib.parse import urlsplit
+
+    from olr_scout.sources.registry import ADAPTERS
+
+    host = urlsplit(next(c.base_url for c in ADAPTERS if c.key == site)).netloc
+    others = [u for u in client.request_log[n:] if urlsplit(u).netloc != host]
+    assert others and not [u for u in client.request_log[n:] if urlsplit(u).netloc == host]
+    assert api.put(f"/api/sources/{site}", json={"enabled": True}).json()["enabled"] is True
+    assert any(i["source"] == site for i in api.get("/api/suggestions").json()["items"])
+    assert api.put("/api/sources/nope", json={"enabled": False}).status_code == 404

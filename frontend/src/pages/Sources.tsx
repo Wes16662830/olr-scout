@@ -14,7 +14,7 @@ function ingestText(p?: Progress): string | null {
   const done = p.seasons_done ? ` · ${p.seasons_done} season(s) saved` : "";
   return `${where ? where + ": " : ""}${p.phase ?? "working"}${race}${done}`;
 }
-type S = { key: string; name: string; base_url: string; verified: boolean; status: string; last_run: string | null; last_success: string | null; lot_count: number; message: string; detail: Record<string, unknown>; progress?: Progress };
+type S = { key: string; name: string; enabled?: boolean; base_url: string; verified: boolean; status: string; last_run: string | null; last_success: string | null; lot_count: number; message: string; detail: Record<string, unknown>; progress?: Progress };
 
 function progressText(p?: Progress): string | null {
   if (!p?.running) return null;
@@ -72,7 +72,9 @@ export default function Sources() {
                   can see who it is. It is retried at the next full refresh.</div>
               )}
               {s.detail && Object.keys(s.detail).length > 0 && <details><summary>detail</summary><pre className="ocr">{JSON.stringify(s.detail, null, 2)}</pre></details>}</td>
-            <td><button className="btn ghost" onClick={() => run("/sources/refresh", { only: [s.key] }, `Refresh ${s.key}`)} disabled={s.key === "benzing"}>Run</button></td>
+            <td>{s.enabled === false
+              ? <span className="small muted">off in Settings</span>
+              : <button className="btn ghost" onClick={() => run("/sources/refresh", { only: [s.key] }, `Refresh ${s.key}`)} disabled={s.key === "benzing"}>Run</button>}</td>
           </tr>
         ))}</tbody>
       </table></div>

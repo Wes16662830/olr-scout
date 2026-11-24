@@ -13,6 +13,7 @@ from . import ocr
 from .models import AncestorClaim, Lot
 from .scoring import engine
 from .scoring.pedigree import extract_claims
+from .sources.registry import disabled_keys
 from .util.http import PoliteClient, SourceBlocked
 from .util.timeutil import now_utc
 
@@ -25,7 +26,8 @@ def _is_pdf(url: str) -> bool:
 
 
 def pending(s: Session, can_ocr: bool, limit: int = PER_RUN) -> list[Lot]:
-    lots = s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.pedigree_url.is_not(None))
+    lots = s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.pedigree_url.is_not(None),
+                                    Lot.source.not_in(disabled_keys(s)))
                      .order_by(Lot.ends_at.is_(None), Lot.ends_at)).all()
     out = []
     for lot in lots:
@@ -100,7 +102,8 @@ def read_pending(s: Session, client: PoliteClient, limit: int = PER_RUN) -> dict
 
 
 def status(s: Session) -> dict:
-    lots = s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.pedigree_url.is_not(None))).all()
+    lots = s.scalars(select(Lot).where(Lot.status.in_(("live", "upcoming")), Lot.pedigree_url.is_not(None),
+                                    Lot.source.not_in(disabled_keys(s)))).all()
     read = [l for l in lots if (l.extra or {}).get("ped_read") and not (l.extra or {})["ped_read"].get("error")]
     failed = [l for l in lots if ((l.extra or {}).get("ped_read") or {}).get("error")]
     return {**ocr.ocr_status(), "with_pedigree": len(lots), "read": len(read), "failed": len(failed),
