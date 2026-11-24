@@ -10,6 +10,8 @@ A higher tier always outranks a lower tier.
 
 from __future__ import annotations
 
+import time
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -435,20 +437,38 @@ def _score_all(s: Session, lots: list[Lot] | None = None) -> int:
     ctx.dup_rings = {k: v for k, v in by_ring.items() if len(v) > 1}
     for lot in lots:
         match_lot(lot, ctx)
-    s.flush()
+    s.commit()  # see BATCH
     siblings: dict[str, list[Lot]] = defaultdict(list)
     for lot in s.scalars(select(Lot).where((Lot.sire.is_not(None)) | (Lot.dam.is_not(None)))):
         for key in (_norm_parent(lot.sire), _norm_parent(lot.dam)):
             if key:
                 siblings[key].append(lot)
     # Read every lot's parent claims first, so the progeny index sees this run's links.
-    claims_of = {lot.id: refresh_claims(s, lot, ctx) for lot in lots}
-    s.flush()
+    claims_of = {}
+    for i, lot in enumerate(lots, 1):
+        claims_of[lot.id] = refresh_claims(s, lot, ctx)
+        if i % BATCH == 0:
+            _pause(s)
+    s.commit()
     ctx.progeny = progeny.ProgenyIndex(s)
-    for lot in lots:
+    for i, lot in enumerate(lots, 1):
         score_lot(s, lot, ctx, siblings, claims_of[lot.id])
-    s.flush()
+        if i % BATCH == 0:
+            _pause(s)
+    s.commit()
     return len(lots)
+
+
+# Scoring every lot takes a while on a big database (many OLR seasons, hundreds of lots).
+# Saving in batches keeps each database write short, so a click in the app (a Settings
+# tick, Watch) never waits behind the whole run ("Saving…" that seemed to hang).
+BATCH = 50
+BATCH_PAUSE = 0.2  # seconds between batches: a waiting write retries every ~100 ms and must get a turn
+
+
+def _pause(s: Session) -> None:
+    s.commit()
+    time.sleep(BATCH_PAUSE)
 
 
 # ----------------------------------------------------------------- suggestions

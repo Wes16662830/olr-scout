@@ -285,3 +285,17 @@ def test_suggestions_ranked_by_jacket_place(session):
     assert order("jacket_green")[0] == 99  # Green 66th
     assert order("jacket_best")[:3] == [74, 6, 99]  # best places 35, 38, 66
     assert order("jacket_best")[-1] == 1  # no jacket place: last
+
+
+def test_scoring_saves_in_batches_so_clicks_dont_wait(session, monkeypatch):
+    """A Settings tick 'hung' while all lots were re-scored in one long database write.
+    Scoring now commits every BATCH lots, pausing briefly so a waiting write gets a turn."""
+    monkeypatch.setattr(engine, "BATCH", 2)
+    monkeypatch.setattr(engine, "BATCH_PAUSE", 0)
+    for i in range(1, 8):
+        make_lot(session, i, lot_key=f"b{i}", ring_raw=f"ZA-25-BAT-{100 + i}", current_bid=100)
+    commits = []
+    real = session.commit
+    monkeypatch.setattr(session, "commit", lambda: (commits.append(1), real())[1])
+    engine.score_all(session)
+    assert len(commits) >= 7  # match + claims batches + score batches, not one at the end

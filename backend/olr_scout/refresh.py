@@ -294,7 +294,9 @@ def refresh_all(s: Session, sources: dict[str, AuctionSource], only: list[str] |
     chosen = [src for key, src in sources.items() if (not only or key in only) and key not in off]
     reports = run_sources(s, chosen)
     close_stale(s)
+    s.commit()
     seller.recompute(s)
+    s.commit()
     engine.score_all(s)
     from .mybids import auto_watch
 

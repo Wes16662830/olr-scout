@@ -6,12 +6,25 @@ const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || "";
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
   if (DEMO) return (await import("../demo/mock")).demoRequest<T>(method, path, body);
-  const r = await fetch(`${API_BASE}/api${path}`, {
-    method,
-    credentials: "same-origin",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  // Never wait forever: say so if OLR Scout doesn't answer (busy or the black window closed).
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), method === "GET" ? 90_000 : 30_000);
+  let r: Response;
+  try {
+    r = await fetch(`${API_BASE}/api${path}`, {
+      method,
+      credentials: "same-origin",
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw new Error((e as Error).name === "AbortError"
+      ? "OLR Scout didn't answer in time — it may be busy refreshing. Try again in a minute."
+      : "Can't reach OLR Scout — is the black window still open?");
+  } finally {
+    clearTimeout(timer);
+  }
   if (r.status === 401) throw new AuthError("login required");
   if (!r.ok) {
     let msg = `${r.status}`;
